@@ -21,6 +21,8 @@ export const GET: RequestHandler = async ({ url }) => {
 		});
 		return json(trips);
 	} catch (err) {
+		if (err instanceof NsApiError && err.status === 429)
+			error(429, 'NS-limiet bereikt (300 verzoeken per 5 minuten). Probeer het zo opnieuw.');
 		if (err instanceof NsApiError) error(502, err.message);
 		throw err;
 	}

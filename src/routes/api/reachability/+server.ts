@@ -1,5 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { db, ns } from '#lib/server/context.js';
+import { NsApiError } from '#lib/server/ns.js';
 import { nextSaturdayMorning } from '#lib/itinerary.js';
 import type { Reachability } from '#lib/types.js';
 import type { RequestHandler } from './$types';
@@ -8,9 +9,11 @@ const WEEK_SECONDS = 7 * 24 * 3600;
 const CONCURRENCY = 3;
 
 /**
- * Fastest trip from `from` to every walk start/end station at a reference time (next Saturday 09:00).
+ * Fastest trip from `from` to every walk start station at a reference time (next Saturday 09:00).
  * Used to colour the map, so planned times are good enough; cached for a week per station pair.
- * Outbound time to an end station doubles as an estimate of the ride home from it.
+ *
+ * Free NS keys allow 300 requests per 5 minutes. On a 429 we stop and return what we have;
+ * since each pair is cached, a later request picks up where this one stopped.
  */
 export const GET: RequestHandler = async ({ url }) => {
 	const client = ns();
@@ -20,16 +23,14 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	const codes = (
 		db()
-			.prepare(
-				`select start_station as code from walks where start_station is not null
-				 union select end_station from walks where end_station is not null`
-			)
+			.prepare(`select distinct start_station as code from walks where start_station is not null`)
 			.all() as { code: string }[]
 	).map((r) => r.code);
 
 	const dateTime = nextSaturdayMorning();
 	const result: Reachability = {};
 	const queue = [...codes];
+	let rateLimited = false;
 	async function worker() {
 		for (let code = queue.shift(); code; code = queue.shift()) {
 			if (code === from) {
@@ -51,11 +52,19 @@ export const GET: RequestHandler = async ({ url }) => {
 					? { minutes: best.plannedDurationMin, transfers: best.transfers }
 					: null;
 			} catch (err) {
+				if (err instanceof NsApiError && err.status === 429) {
+					rateLimited = true;
+					queue.length = 0; // stop the other workers too
+					return;
+				}
 				console.warn(`reachability ${from} → ${code} failed:`, (err as Error).message);
 				result[code] = null;
 			}
 		}
 	}
 	await Promise.all(Array.from({ length: CONCURRENCY }, worker));
-	return json(result, { headers: { 'cache-control': 'private, max-age=3600' } });
+	return json(
+		{ times: result, incomplete: rateLimited },
+		{ headers: { 'cache-control': rateLimited ? 'no-store' : 'private, max-age=3600' } }
+	);
 };

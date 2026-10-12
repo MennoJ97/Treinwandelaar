@@ -35,7 +35,7 @@
 
 	// --- Travel times from home ---------------------------------------------------------------------
 	let reachability = $state<Reachability>({});
-	let reachStatus = $state<'idle' | 'loading' | 'error'>('idle');
+	let reachStatus = $state<'idle' | 'loading' | 'error' | 'incomplete'>('idle');
 
 	$effect(() => {
 		if (!data.hasNsKey) return;
@@ -43,9 +43,9 @@
 		reachStatus = 'loading';
 		fetch(`/api/reachability?from=${encodeURIComponent(home)}`, { signal: controller.signal })
 			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-			.then((r: Reachability) => {
-				reachability = r;
-				reachStatus = 'idle';
+			.then((r: { times: Reachability; incomplete: boolean }) => {
+				reachability = r.times;
+				reachStatus = r.incomplete ? 'incomplete' : 'idle';
 			})
 			.catch(() => {
 				if (!controller.signal.aborted) reachStatus = 'error';
@@ -176,6 +176,11 @@
 				</p>
 			{:else if reachStatus === 'loading' && !Object.keys(reachability).length}
 				<p class="hint">Reistijden vanaf {homeStation?.name} berekenen…</p>
+			{:else if reachStatus === 'incomplete'}
+				<p class="notice">
+					Nog niet alle reistijden: de NS-limiet (300 verzoeken per 5 minuten) is bereikt. Herlaad
+					over een paar minuten; wat al binnen is, blijft bewaard.
+				</p>
 			{:else if reachStatus === 'error'}
 				<p class="notice">
 					Reistijden ophalen mislukt. De lijst werkt wel, alleen zonder reistijd.
