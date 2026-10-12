@@ -1,9 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="nl">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<meta name="color-scheme" content="light dark" />
+		<!-- The light/dark switch every mhjansen.nl site shares. Blocking, before anything is
+		     drawn: it applies a saved choice so the page never flashes the other theme. -->
+		<script src="%sveltekit.assets%/family.js"></script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

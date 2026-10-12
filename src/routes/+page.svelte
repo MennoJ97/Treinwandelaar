@@ -4,7 +4,12 @@
 	import WalkMap from '#lib/components/WalkMap.svelte';
 	import WalkDetail from '#lib/components/WalkDetail.svelte';
 	import { formatDuration, travelBand } from '#lib/itinerary.js';
-	import type { Reachability, WalkSummary } from '#lib/types.js';
+	import {
+		COLLECTION_LABELS,
+		type Collection,
+		type Reachability,
+		type WalkSummary
+	} from '#lib/types.js';
 	import { endLabel, needsBus, startLabel } from '#lib/walk.js';
 	import type { PageProps } from './$types';
 
@@ -61,6 +66,17 @@
 	let maxTravel = $state(180);
 	let maxKm = $state(25);
 	let hideDone = $state(false);
+	const collections = Object.keys(COLLECTION_LABELS) as Collection[];
+	let shown = $state<Collection[]>([...collections]);
+	const countBy = $derived(
+		Object.fromEntries(
+			collections.map((c) => [c, data.walks.filter((w) => w.collection === c).length])
+		) as Record<Collection, number>
+	);
+
+	function toggleCollection(c: Collection) {
+		shown = shown.includes(c) ? shown.filter((x) => x !== c) : [...shown, c];
+	}
 	let noBus = $state(false);
 	let sort = $state<'travel' | 'rating' | 'distance' | 'name'>(data.hasNsKey ? 'travel' : 'rating');
 
@@ -69,6 +85,7 @@
 			const t = minutesTo(w);
 			if (maxTravel < 180 && t != null && t > maxTravel) return false;
 			if (maxKm < 25 && w.distanceKm > maxKm) return false;
+			if (!shown.includes(w.collection)) return false;
 			if (hideDone && w.status === 'done') return false;
 			if (noBus && needsBus(w)) return false;
 			return true;
@@ -113,6 +130,10 @@
 			{selectedId}
 			onselect={select}
 		/>
+		<!-- The light/dark switch all the mhjansen.nl sites share; static/family.js fills it in and
+		     shows it. Outside the panel on purpose: it must exist when the page loads, and the
+		     panel re-renders between list and detail. -->
+		<button class="map-btn theme-toggle" aria-label="Donkere modus" hidden></button>
 	</div>
 
 	<aside class="panel" bind:this={panel}>
@@ -152,6 +173,19 @@
 					<input type="range" min="8" max="25" step="1" bind:value={maxKm} />
 					<output class="tabular">{maxKm >= 25 ? 'alles' : `${maxKm} km`}</output>
 				</label>
+				<div class="kinds" role="group" aria-label="Soort wandeling">
+					{#each collections as c (c)}
+						{#if countBy[c]}
+							<button
+								type="button"
+								aria-pressed={shown.includes(c)}
+								onclick={() => toggleCollection(c)}
+							>
+								{COLLECTION_LABELS[c]} <span class="tabular">{countBy[c]}</span>
+							</button>
+						{/if}
+					{/each}
+				</div>
 				<div class="checks">
 					<label><input type="checkbox" bind:checked={hideDone} /> Verberg gelopen</label>
 					<label><input type="checkbox" bind:checked={noBus} /> Alleen station tot station</label>
@@ -208,6 +242,7 @@
 									{/if}
 									<span>{km(w.distanceKm)} km</span>
 									{#if w.ratingAvg != null}<span>★ {w.ratingAvg.toLocaleString('nl-NL')}</span>{/if}
+									<span class="kind">{COLLECTION_LABELS[w.collection]}</span>
 								</span>
 							</button>
 						</li>
@@ -245,11 +280,35 @@
 		z-index: 0;
 	}
 
+	/* Round, under MapLibre's zoom buttons (top-right, 10px margin, 2 × 29px). */
+	.map-btn {
+		position: absolute;
+		top: 78px;
+		right: 10px;
+		z-index: 2;
+		width: 30px;
+		height: 30px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border: 0;
+		border-radius: 50%;
+		background: var(--surface);
+		color: var(--muted);
+		box-shadow: 0 0 0 2px rgb(0 0 0 / 0.1);
+		cursor: pointer;
+	}
+
+	.map-btn:hover {
+		color: var(--ink);
+	}
+
 	.panel {
 		position: relative;
 		z-index: 1;
 		background: var(--surface);
-		box-shadow: 0 -4px 12px rgb(23 34 43 / 0.08);
+		box-shadow: 0 -4px 12px var(--shadow);
 	}
 
 	@media (min-width: 800px) {
@@ -273,8 +332,8 @@
 			overflow-y: auto;
 			border-radius: 10px;
 			box-shadow:
-				0 1px 2px rgb(23 34 43 / 0.12),
-				0 8px 24px rgb(23 34 43 / 0.1);
+				0 1px 2px var(--shadow),
+				0 8px 24px var(--shadow);
 		}
 	}
 
@@ -335,6 +394,37 @@
 		accent-color: var(--rail);
 	}
 
+	.kinds {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.kinds button {
+		padding: 3px 10px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--muted);
+		cursor: pointer;
+	}
+
+	.kinds button[aria-pressed='true'] {
+		border-color: var(--ink);
+		background: var(--ink);
+		color: var(--on-accent);
+	}
+
+	.kinds button span {
+		opacity: 0.7;
+		margin-left: 2px;
+	}
+
+	.kind {
+		margin-left: auto;
+		color: var(--muted);
+	}
+
 	.checks {
 		display: flex;
 		flex-wrap: wrap;
@@ -360,7 +450,7 @@
 		margin: 12px 20px 0;
 		padding: 6px 9px;
 		border-left: 3px solid var(--warn);
-		background: #fbf1ea;
+		background: var(--notice-bg);
 		font-size: var(--step--1);
 	}
 

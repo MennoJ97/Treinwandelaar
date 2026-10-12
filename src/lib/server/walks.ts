@@ -1,10 +1,11 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { WalkDetail, WalkPhoto, WalkSummary } from '../types';
+import type { Collection, WalkDetail, WalkPhoto, WalkSummary } from '../types';
 
 /* Row shape shared by the summary and detail queries. */
 interface WalkRow {
 	id: string;
 	name: string;
+	collection: Collection;
 	start_station: string | null;
 	end_station: string | null;
 	start_station_name: string | null;
@@ -37,6 +38,7 @@ function toSummary(r: WalkRow): WalkSummary {
 	return {
 		id: r.id,
 		name: r.name,
+		collection: r.collection,
 		startStation: r.start_station,
 		endStation: r.end_station,
 		startStationName: r.start_station_name,

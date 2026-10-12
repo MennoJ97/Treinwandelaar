@@ -100,7 +100,7 @@
 	.option.selected {
 		border-color: var(--rail);
 		background: var(--rail);
-		color: #fff;
+		color: var(--on-accent);
 	}
 
 	.option.cancelled .dep {

@@ -65,6 +65,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 	return json(
 		{ times: result, incomplete: rateLimited },
-		{ headers: { 'cache-control': rateLimited ? 'no-store' : 'private, max-age=3600' } }
+		// No browser caching: the walk set can change between ingests; each pair is cached server-side.
+		{ headers: { 'cache-control': 'no-store' } }
 	);
 };

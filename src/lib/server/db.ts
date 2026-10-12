@@ -15,6 +15,7 @@ create table if not exists walks (
 	id text primary key,              -- '<source>:<source_id>'
 	source text not null,
 	source_id text not null,
+	collection text not null,         -- 'ns-wandeling' | 'ov-stapper' | 'streekpad' | 'law'
 	name text not null,
 	start_place text,
 	end_place text,
@@ -71,8 +72,18 @@ export function openDb(path = process.env.DATABASE_PATH ?? 'data/treinwandelaar.
 	const db = new DatabaseSync(path);
 	db.exec('pragma journal_mode = wal; pragma foreign_keys = on;');
 	db.exec(SCHEMA);
+	migrate(db);
 	instance = db;
 	return db;
+}
+
+/** Additive migrations for databases created before a column existed. */
+function migrate(db: DatabaseSync) {
+	const columns = new Set(
+		(db.prepare('pragma table_info(walks)').all() as { name: string }[]).map((c) => c.name)
+	);
+	if (!columns.has('collection'))
+		db.exec(`alter table walks add column collection text not null default 'ns-wandeling'`);
 }
 
 /** Run `fn` in a transaction; node:sqlite has no built-in helper. */

@@ -1,14 +1,21 @@
 /**
- * Ingest Wandelnet NS-wandelingen: overview → route pages → reviews → GPX → `walks`.
+ * Ingest Wandelnet's station-to-station walks: the current NS-wandelingen and the retired ones
+ * that live on as "OV-stappers". Overview → route pages → reviews → GPX → `walks`.
  * Run `stations` first. Raw responses are cached in data/raw (use --refresh to re-download).
  * Personal use only: Wandelnet's terms forbid republishing this data.
  */
 import { readFileSync, existsSync } from 'node:fs';
-import { openDb, transaction } from '../../src/lib/server/db';
-import { haversine, lineLengthKm, nearest, simplify, type LngLat } from '../../src/lib/geo';
-import type { Station } from '../../src/lib/types';
+import { openDb } from '../../src/lib/server/db';
+import { haversine, lineLengthKm, nearest, type LngLat } from '../../src/lib/geo';
+import type { Collection, Station } from '../../src/lib/types';
 import { fetchCached } from '../lib/http';
+import { pruneStale, saveWalk } from '../lib/store';
 import { WANDELNET, parseGpx, parseList, parseReviews, parseRoutePage } from '../lib/wandelnet';
+
+const COLLECTIONS: { path: string; collection: Collection }[] = [
+	{ path: '/ns-wandelingen', collection: 'ns-wandeling' },
+	{ path: '/ov-stappers', collection: 'ov-stapper' }
+];
 
 const MAX_STATION_DISTANCE_M = 1500;
 /** Some walks end in a village without a station (e.g. Wageningen); fall back to the nearest one. */
@@ -62,114 +69,115 @@ async function main() {
 		? JSON.parse(readFileSync(OVERRIDES_FILE, 'utf8'))
 		: {};
 
-	const list = parseList(await fetchCached(`${WANDELNET}/ns-wandelingen`));
-	console.log(`Overview lists ${list.length} NS walks.`);
-
-	const upsertWalk = db.prepare(`
-		insert into walks (id, source, source_id, name, start_place, end_place, start_station, end_station,
-			start_station_m, end_station_m, is_loop, distance_km, stated_distance_km, description, accessibility, features, geometry,
-			rating_avg, review_count, source_url, gpx_url, updated_at)
-		values (?, 'wandelnet', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-		on conflict(id) do update set name = excluded.name, start_place = excluded.start_place,
-			end_place = excluded.end_place, start_station = excluded.start_station,
-			end_station = excluded.end_station, start_station_m = excluded.start_station_m,
-			end_station_m = excluded.end_station_m, is_loop = excluded.is_loop, distance_km = excluded.distance_km,
-			stated_distance_km = excluded.stated_distance_km, description = excluded.description,
-			accessibility = excluded.accessibility, features = excluded.features, geometry = excluded.geometry,
-			rating_avg = excluded.rating_avg, review_count = excluded.review_count,
-			source_url = excluded.source_url, gpx_url = excluded.gpx_url, updated_at = excluded.updated_at`);
-	const deletePhotos = db.prepare(
-		`delete from walk_photos where walk_id = ? and source = 'wandelnet'`
-	);
-	const insertPhoto = db.prepare(
-		`insert or ignore into walk_photos (walk_id, url, caption, source, sort) values (?, ?, ?, 'wandelnet', ?)`
-	);
-
 	const problems: string[] = [];
-	let stored = 0;
-	for (const entry of list) {
-		const id = `wandelnet:${entry.id}`;
-		const override = overrides[id] ?? {};
-		if (override.skip) continue;
-		try {
-			const url = `${WANDELNET}/wandelroute/${entry.id}/`;
-			const page = parseRoutePage(await fetchCached(url));
-			if (!page.gpxUrl) throw new Error('no GPX link');
-			const track = parseGpx(await fetchCached(page.gpxUrl));
-			if (track.length < 2) throw new Error('empty GPX');
-			const reviews =
-				page.reviewCount && page.reviewUrl
-					? parseReviews(await fetchCached(page.reviewUrl))
-					: { count: 0, average: null };
+	const seen = new Set<string>();
+	const stored: { name: string; start?: string; end?: string; km: number }[] = [];
+	for (const { path, collection } of COLLECTIONS) {
+		const list = parseList(await fetchCached(`${WANDELNET}${path}`));
+		console.log(`\n${path} lists ${list.length} walks.`);
+		let count = 0;
 
-			const startPlace = page.startPlace ?? entry.startPlace;
-			const endPlace = page.endPlace ?? entry.endPlace;
-			const start = override.startStation
-				? fromOverride(override.startStation, track[0], stations)
-				: matchStation(track[0], startPlace, stations);
-			const end = override.endStation
-				? fromOverride(override.endStation, track.at(-1), stations)
-				: matchStation(track.at(-1), endPlace, stations);
+		for (const entry of list) {
+			const id = `wandelnet:${entry.id}`;
+			// A walk listed in both overviews counts as the current NS walk.
+			if (seen.has(id)) continue;
+			const override = overrides[id] ?? {};
+			if (override.skip) continue;
+			try {
+				const url = `${WANDELNET}/wandelroute/${entry.id}/`;
+				const page = parseRoutePage(await fetchCached(url));
+				if (!page.gpxUrl) throw new Error('no GPX link');
+				const track = parseGpx(await fetchCached(page.gpxUrl));
+				if (track.length < 2) throw new Error('empty GPX');
+				const reviews =
+					page.reviewCount && page.reviewUrl
+						? parseReviews(await fetchCached(page.reviewUrl))
+						: { count: 0, average: null };
 
-			const distanceKm = Math.round(lineLengthKm(track) * 10) / 10;
-			const stated = page.statedKm ?? entry.statedKm;
-			if (!start || !end)
-				problems.push(
-					`${id} ${page.name}: unmatched ${!start ? 'start' : ''} ${!end ? 'end' : ''} (${startPlace} → ${endPlace})`
+				const startPlace = page.startPlace ?? entry.startPlace;
+				const endPlace = page.endPlace ?? entry.endPlace;
+				const start = override.startStation
+					? fromOverride(override.startStation, track[0], stations)
+					: matchStation(track[0], startPlace, stations);
+				const end = override.endStation
+					? fromOverride(override.endStation, track.at(-1), stations)
+					: matchStation(track.at(-1), endPlace, stations);
+
+				const distanceKm = Math.round(lineLengthKm(track) * 10) / 10;
+				const stated = page.statedKm ?? entry.statedKm;
+				const name = page.name || entry.name;
+				if (!start || !end)
+					problems.push(
+						`${id} ${name}: unmatched ${!start ? 'start' : ''} ${!end ? 'end' : ''} (${startPlace} → ${endPlace})`
+					);
+				for (const [label, m] of [
+					['start', start],
+					['end', end]
+				] as const)
+					if (m?.metres && m.metres > MAX_STATION_DISTANCE_M)
+						problems.push(`${id} ${name}: ${label} is ${m.how} from ${m.code}`);
+				if (stated && Math.abs(distanceKm - stated) / stated > 0.15)
+					problems.push(`${id} ${name}: GPX ${distanceKm} km vs stated ${stated} km`);
+
+				// Some retired walks are listed twice under different ids (e.g. "Linge").
+				const twin = stored.find(
+					(w) =>
+						w.start === start?.code &&
+						w.end === end?.code &&
+						Math.abs(w.km - distanceKm) / distanceKm < 0.1
 				);
-			for (const [label, m] of [
-				['start', start],
-				['end', end]
-			] as const)
-				if (m?.metres && m.metres > MAX_STATION_DISTANCE_M)
-					problems.push(`${id} ${page.name}: ${label} is ${m.how} from ${m.code}`);
-			if (stated && Math.abs(distanceKm - stated) / stated > 0.15)
-				problems.push(`${id} ${page.name}: GPX ${distanceKm} km vs stated ${stated} km`);
+				if (twin) {
+					console.log(`= ${name.padEnd(36)} same route as "${twin.name}", skipped`);
+					continue;
+				}
 
-			const geometry = simplify(track, 8).map(([lng, lat]) => [
-				Math.round(lng * 1e5) / 1e5,
-				Math.round(lat * 1e5) / 1e5
-			]);
-			transaction(db, () => {
-				upsertWalk.run(
+				saveWalk(db, {
 					id,
-					entry.id,
-					page.name || entry.name,
+					sourceId: entry.id,
+					collection,
+					name,
 					startPlace,
 					endPlace,
-					start?.code ?? null,
-					end?.code ?? null,
-					start?.metres ?? null,
-					end?.metres ?? null,
+					startStation: start?.code ?? null,
+					endStation: end?.code ?? null,
+					startStationM: start?.metres ?? null,
+					endStationM: end?.metres ?? null,
 					// A loop if the route itself returns to its start, not merely shares a station with it
 					// (bus-leg walks can start and end at the same station without being a loop).
-					haversine(track[0], track.at(-1)!) < MAX_STATION_DISTANCE_M ? 1 : 0,
+					isLoop: haversine(track[0], track.at(-1)!) < MAX_STATION_DISTANCE_M,
 					distanceKm,
-					stated,
-					page.description,
-					page.accessibility,
-					JSON.stringify(page.features),
-					JSON.stringify(geometry),
-					reviews.average,
-					reviews.count || page.reviewCount,
-					url,
-					page.gpxUrl
+					statedDistanceKm: stated,
+					description: page.description,
+					accessibility: page.accessibility,
+					features: page.features,
+					track,
+					ratingAvg: reviews.average,
+					reviewCount: reviews.count || page.reviewCount,
+					sourceUrl: url,
+					gpxUrl: page.gpxUrl,
+					photos: [page.headerImage, entry.image]
+						.filter((u): u is string => !!u)
+						.map((u) => ({ url: u, caption: null }))
+				});
+				seen.add(id);
+				stored.push({ name, start: start?.code, end: end?.code, km: distanceKm });
+				count++;
+				console.log(
+					`✓ ${name.padEnd(36)} ${String(distanceKm).padStart(5)} km  ${start?.code ?? '??'} (${start?.how ?? '-'}) → ${end?.code ?? '??'} (${end?.how ?? '-'})  ★${reviews.average ?? '-'} (${reviews.count})`
 				);
-				deletePhotos.run(id);
-				[page.headerImage, entry.image]
-					.filter((u): u is string => !!u)
-					.forEach((u, i) => insertPhoto.run(id, u, null, i));
-			});
-			stored++;
-			console.log(
-				`✓ ${page.name.padEnd(36)} ${String(distanceKm).padStart(5)} km  ${start?.code ?? '??'} (${start?.how ?? '-'}) → ${end?.code ?? '??'} (${end?.how ?? '-'})  ★${reviews.average ?? '-'} (${reviews.count})`
-			);
-		} catch (err) {
-			problems.push(`${id} ${entry.name}: ${(err as Error).message}`);
+			} catch (err) {
+				problems.push(`${id} ${entry.name}: ${(err as Error).message}`);
+			}
 		}
+		console.log(`Stored ${count}/${list.length} from ${path}.`);
 	}
 
-	console.log(`\nStored ${stored}/${list.length} walks.`);
+	const pruned = pruneStale(
+		db,
+		COLLECTIONS.map((c) => c.collection),
+		seen
+	);
+	if (pruned) console.log(`Removed ${pruned} walk(s) no longer listed.`);
 	if (problems.length) {
 		console.log(`\n${problems.length} issue(s) — fix via ${OVERRIDES_FILE} if needed:`);
 		for (const p of problems) console.log(`  - ${p}`);

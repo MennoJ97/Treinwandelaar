@@ -1,6 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseKm, parseList, parseReviews, parseRoutePage, splitPlaces } from './wandelnet';
+import {
+	parseKm,
+	parseList,
+	parsePathPage,
+	parseReviews,
+	parseRoutePage,
+	splitPlaces,
+	stageNumber
+} from './wandelnet';
 import { parseWalkPage } from './nsnl';
 
 const fixture = (name: string) =>
@@ -48,6 +56,18 @@ describe('wandelnet', () => {
 		expect(count).toBe(23);
 		expect(average).toBeGreaterThanOrEqual(1);
 		expect(average).toBeLessThanOrEqual(5);
+	});
+});
+
+describe('wandelnet paths', () => {
+	it('reads a streekpad page and its numbered stages, skipping side routes', () => {
+		const html = fixture('wandelnet-betuwepad.html');
+		expect(parsePathPage(html).name).toBe('Betuwepad');
+		expect(parsePathPage(html).intro).toMatch(/146 kilometer/);
+		const stages = parseList(html).filter((e) => stageNumber(e) !== null);
+		expect(stages).toHaveLength(12);
+		expect(stages[0]).toMatchObject({ startPlace: 'Station Tiel', endPlace: 'Buren' });
+		expect(stageNumber({ ...stages[0], name: 'Etappe 07' })).toBe(7);
 	});
 });
 

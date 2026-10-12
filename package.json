@@ -17,7 +17,8 @@
 		"ingest:stations": "tsx --env-file-if-exists=.env scripts/ingest/stations.ts",
 		"ingest:wandelnet": "tsx --env-file-if-exists=.env scripts/ingest/wandelnet.ts",
 		"ingest:nsnl": "tsx --env-file-if-exists=.env scripts/ingest/nsnl.ts",
-		"ingest": "npm run ingest:stations && npm run ingest:wandelnet && npm run ingest:nsnl"
+		"ingest": "npm run ingest:stations && npm run ingest:wandelnet && npm run ingest:paden && npm run ingest:nsnl",
+		"ingest:paden": "tsx --env-file-if-exists=.env scripts/ingest/paden.ts"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^6.0.0",

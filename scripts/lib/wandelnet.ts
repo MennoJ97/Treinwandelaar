@@ -142,3 +142,23 @@ export function parseGpx(xml: string): LngLat[] {
 	}
 	return points;
 }
+
+/** A streekpad/LAW overview page: its name and intro. Stage cards are parsed with `parseList`. */
+export function parsePathPage(html: string): { name: string; intro: string | null } {
+	const root = parse(html);
+	const title = text(root.querySelector('title')) ?? '';
+	return {
+		// "Marskramerpad (LAW 3) | In de voetsporen van de marskramers" → "Marskramerpad"
+		name: title
+			.split(' | ')[0]
+			.replace(/\s*\([^)]*\)\s*$/, '')
+			.trim(),
+		intro: root.querySelector('meta[name="description"]')?.getAttribute('content')?.trim() || null
+	};
+}
+
+/** Stage cards are numbered: "01 | Station Tiel - Buren" or "Etappe 01 | Pieterburen - Winsum". */
+export function stageNumber(entry: ListEntry): number | null {
+	const m = entry.name.match(/^(?:Etappe\s*)?(\d+)$/i);
+	return m && entry.startPlace && entry.endPlace ? Number(m[1]) : null;
+}

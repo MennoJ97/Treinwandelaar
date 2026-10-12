@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
 	import { endLabel, startLabel } from '#lib/walk.js';
 	import {
@@ -12,6 +13,7 @@
 		walkMinutes
 	} from '#lib/itinerary.js';
 	import {
+		COLLECTION_LABELS,
 		WALKABLE_STATION_M,
 		type Station,
 		type TripOption,
@@ -56,6 +58,8 @@
 	let date = $state(initial.date);
 	let time = $state(initial.time);
 	let speedKmh = $state(4.5);
+	/** Index of the photo open in the viewer, or null. */
+	let viewing = $state<number | null>(null);
 
 	// --- Train out ----------------------------------------------------------------------------------
 	let outbound = $state<Load<TripOption[]>>({ status: 'idle' });
@@ -182,21 +186,34 @@
 		<button type="button" class="back" onclick={onclose}>Alle wandelingen</button>
 		<h2>{walk.name}</h2>
 		<p class="route">
+			<span class="kind">{COLLECTION_LABELS[walk.collection]}:</span>
 			{startLabel(walk)} naar {walk.isLoop ? 'hetzelfde station' : endLabel(walk)}
 		</p>
 	</header>
 
 	{#if walk.photos.length}
 		<div class="photos" aria-label="Foto's">
-			{#each walk.photos as photo (photo.url)}
-				<img
-					src={photo.url}
-					alt={photo.caption ?? walk.name}
-					loading="lazy"
-					referrerpolicy="no-referrer"
-				/>
+			{#each walk.photos as photo, i (photo.url)}
+				<button
+					type="button"
+					aria-label="Foto {i + 1} van {walk.photos.length} vergroten"
+					onclick={() => (viewing = i)}
+				>
+					<img
+						src={photo.url}
+						alt={photo.caption ?? walk.name}
+						loading="lazy"
+						referrerpolicy="no-referrer"
+					/>
+				</button>
 			{/each}
 		</div>
+		<PhotoViewer
+			photos={walk.photos}
+			title={walk.name}
+			bind:index={viewing}
+			onclose={() => (viewing = null)}
+		/>
 	{/if}
 
 	<dl class="facts">
@@ -432,6 +449,11 @@
 		color: var(--muted);
 	}
 
+	.route .kind {
+		color: var(--ink);
+		font-weight: 600;
+	}
+
 	h3 {
 		margin: 24px 0 8px;
 		font-size: var(--step-1);
@@ -448,15 +470,23 @@
 		scroll-snap-type: x mandatory;
 	}
 
-	.photos img {
+	.photos button {
 		flex: 0 0 82%;
-		width: 82%;
+		padding: 0;
+		border: 0;
+		border-radius: var(--radius);
+		background: var(--line);
+		scroll-snap-align: center;
+		cursor: zoom-in;
+		line-height: 0;
+	}
+
+	.photos img {
+		width: 100%;
 		height: auto;
 		aspect-ratio: 16 / 9;
 		object-fit: cover;
 		border-radius: var(--radius);
-		scroll-snap-align: center;
-		background: var(--line);
 	}
 
 	.facts {
@@ -596,7 +626,7 @@
 		margin: 4px 0;
 		padding: 6px 9px;
 		border-left: 3px solid var(--warn);
-		background: #fbf1ea;
+		background: var(--notice-bg);
 		font-size: var(--step--1);
 	}
 
@@ -637,7 +667,7 @@
 	.status button[aria-pressed='true'] {
 		border-color: var(--path);
 		background: var(--path);
-		color: #fff;
+		color: var(--on-accent);
 	}
 
 	.stars {

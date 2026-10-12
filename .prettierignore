@@ -7,3 +7,7 @@ bun.lockb
 
 # Miscellaneous
 /static/
+
+# Saved third-party pages used as parser fixtures
+scripts/lib/__fixtures__
+src/lib/server/__fixtures__

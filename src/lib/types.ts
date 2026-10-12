@@ -12,9 +12,19 @@ export interface WalkPhoto {
 	source: string;
 }
 
+export type Collection = 'ns-wandeling' | 'ov-stapper' | 'streekpad' | 'law';
+
+export const COLLECTION_LABELS: Record<Collection, string> = {
+	'ns-wandeling': 'NS-wandeling',
+	'ov-stapper': 'OV-stapper',
+	streekpad: 'Streekpad',
+	law: 'LAW-route'
+};
+
 export interface WalkSummary {
 	id: string;
 	name: string;
+	collection: Collection;
 	startStation: string | null;
 	endStation: string | null;
 	startStationName: string | null;
