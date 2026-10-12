@@ -1,0 +1,26 @@
+# Personal use only: Wandelnet's terms forbid republishing their routes, so keep this behind
+# authentication (Traefik basic-auth/forward-auth) or reachable only over LAN/WireGuard.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ORIGIN: https://treinwandelaar.example.lan # set to the URL you open it on
+    volumes:
+      - ./data:/data
+    # Adapt to your Traefik setup (router host, entrypoint, cert resolver, auth middleware):
+    # labels:
+    #   - traefik.enable=true
+    #   - traefik.http.routers.treinwandelaar.rule=Host(`treinwandelaar.example.lan`)
+    #   - traefik.http.routers.treinwandelaar.middlewares=<your-auth-middleware>
+    #   - traefik.http.services.treinwandelaar.loadbalancer.server.port=3000
+
+  # Refresh stations and walks: `docker compose run --rm ingest` (e.g. weekly from the host's cron).
+  ingest:
+    build: .
+    profiles: [ingest]
+    env_file: .env
+    volumes:
+      - ./data:/data
+    command: ['npm', 'run', 'ingest']
