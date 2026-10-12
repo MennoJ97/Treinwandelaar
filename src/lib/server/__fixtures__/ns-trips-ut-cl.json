@@ -1,0 +1,82 @@
+{
+	"trips": [
+		{
+			"plannedDurationInMinutes": 18,
+			"actualDurationInMinutes": 18,
+			"transfers": 0,
+			"status": "NORMAL",
+			"crowdForecast": "LOW",
+			"shareUrl": {
+				"uri": "https://www.ns.nl/rpx?ctx=example"
+			},
+			"legs": [
+				{
+					"name": "SPR 6029",
+					"direction": "'s-Hertogenbosch",
+					"cancelled": false,
+					"product": {
+						"number": "6029",
+						"categoryCode": "SPR",
+						"shortCategoryName": "SPR",
+						"longCategoryName": "Sprinter",
+						"displayName": "NS Sprinter",
+						"operatorName": "NS"
+					},
+					"origin": {
+						"name": "Utrecht Centraal",
+						"plannedDateTime": "2026-10-17T08:50:00+0200",
+						"actualDateTime": null,
+						"plannedTrack": "21",
+						"actualTrack": null
+					},
+					"destination": {
+						"name": "Culemborg",
+						"plannedDateTime": "2026-10-17T09:08:00+0200",
+						"actualDateTime": null,
+						"plannedTrack": "2",
+						"actualTrack": null
+					}
+				}
+			]
+		},
+		{
+			"plannedDurationInMinutes": 18,
+			"actualDurationInMinutes": 18,
+			"transfers": 0,
+			"status": "NORMAL",
+			"crowdForecast": "LOW",
+			"shareUrl": {
+				"uri": "https://www.ns.nl/rpx?ctx=example"
+			},
+			"legs": [
+				{
+					"name": "SPR 6729",
+					"direction": "Tiel",
+					"cancelled": false,
+					"product": {
+						"number": "6729",
+						"categoryCode": "SPR",
+						"shortCategoryName": "SPR",
+						"longCategoryName": "Sprinter",
+						"displayName": "NS Sprinter",
+						"operatorName": "NS"
+					},
+					"origin": {
+						"name": "Utrecht Centraal",
+						"plannedDateTime": "2026-10-17T09:05:00+0200",
+						"actualDateTime": null,
+						"plannedTrack": "21",
+						"actualTrack": null
+					},
+					"destination": {
+						"name": "Culemborg",
+						"plannedDateTime": "2026-10-17T09:23:00+0200",
+						"actualDateTime": null,
+						"plannedTrack": "2",
+						"actualTrack": null
+					}
+				}
+			]
+		}
+	]
+}

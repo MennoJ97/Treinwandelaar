@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { mapStation, mapTrip, normalizeTime } from './ns';
+
+// Recorded from the real Reisinformatie API v3 (Utrecht Centraal → Culemborg), trimmed to the fields we use.
+const recorded = JSON.parse(
+	readFileSync(new URL('./__fixtures__/ns-trips-ut-cl.json', import.meta.url), 'utf8')
+);
 
 // Hand-written in the shape of a Reisinformatie API v3 trip (trimmed). Replace with a recorded
 // response once an NS_API_KEY is available, to pin the mapping to the real payload.
@@ -54,6 +60,20 @@ describe('NS mapping', () => {
 		expect(t.shareUrl).toBe('https://www.ns.nl/rpx?ctx=abc');
 		expect(t.legs.map((l) => l.product)).toEqual(['NS Sprinter', 'Arriva Stoptrein']);
 		expect(t.legs[0].plannedDeparture).not.toBe(t.legs[0].departure);
+	});
+
+	it('maps a recorded real response', () => {
+		const [t] = recorded.trips.map(mapTrip);
+		expect(t.departure).toBe('2026-10-17T08:50:00+02:00'); // actualDateTime is null → planned
+		expect(t.arrival).toBe('2026-10-17T09:08:00+02:00');
+		expect(t.plannedDurationMin).toBe(18);
+		expect(t.transfers).toBe(0);
+		expect(t.legs[0]).toMatchObject({
+			product: 'NS Sprinter',
+			track: '21',
+			from: 'Utrecht Centraal'
+		});
+		expect(t.shareUrl).toMatch(/^https:\/\/www\.ns\.nl\/rpx\?ctx=/);
 	});
 
 	it('maps both station payload shapes', () => {

@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import TripOptions from './TripOptions.svelte';
+	import { endLabel, startLabel } from '#lib/walk.js';
 	import {
 		addMinutes,
+		busMinutes,
 		amsterdamIso,
 		amsterdamYmd,
 		formatDuration,
@@ -77,8 +79,16 @@
 		const controller = new AbortController();
 		outbound = { status: 'loading' };
 		outIndex = 0;
-		fetchTrips(home.code, walk.startStation, amsterdamIso(date, time), controller.signal)
-			.then((data) => (outbound = { status: 'done', data }))
+		const requested = amsterdamIso(date, time);
+		fetchTrips(home.code, walk.startStation, requested, controller.signal)
+			// NS also returns a few trains just before the requested time; only show ones after it.
+			.then(
+				(data) =>
+					(outbound = {
+						status: 'done',
+						data: data.filter((t) => new Date(t.departure) >= new Date(requested))
+					})
+			)
 			.catch((err) => {
 				if (!controller.signal.aborted) outbound = { status: 'error', message: err.message };
 			});
@@ -93,9 +103,14 @@
 		if (outbound.status === 'loading') return null;
 		return amsterdamIso(date, time);
 	});
-	const walkEnd = $derived(walkStart ? addMinutes(walkStart, minutesWalking) : null);
 	const busAtStart = $derived((walk.startStationM ?? 0) > WALKABLE_STATION_M);
 	const busAtEnd = $derived((walk.endStationM ?? 0) > WALKABLE_STATION_M);
+	const busStartMin = $derived(busAtStart ? busMinutes(walk.startStationM!) : 0);
+	const busEndMin = $derived(busAtEnd ? busMinutes(walk.endStationM!) : 0);
+	/** When you're back at the end station: bus there, walk, bus back. */
+	const walkEnd = $derived(
+		walkStart ? addMinutes(walkStart, busStartMin + minutesWalking + busEndMin) : null
+	);
 
 	// --- Train back ---------------------------------------------------------------------------------
 	let back = $state<Load<TripOption[]>>({ status: 'idle' });
@@ -167,9 +182,7 @@
 		<button type="button" class="back" onclick={onclose}>Alle wandelingen</button>
 		<h2>{walk.name}</h2>
 		<p class="route">
-			{walk.startStationName ?? walk.startPlace} naar {walk.isLoop
-				? 'hetzelfde station'
-				: (walk.endStationName ?? walk.endPlace)}
+			{startLabel(walk)} naar {walk.isLoop ? 'hetzelfde station' : endLabel(walk)}
 		</p>
 	</header>
 
@@ -265,7 +278,7 @@
 					{#if busAtStart}
 						<p class="notice">
 							De route begint in {walk.startPlace}, {km((walk.startStationM ?? 0) / 1000)} km van het
-							station. Neem de bus of een taxi; die tijd zit niet in de planning.
+							station. Neem de bus of een taxi; de planning rekent daar ± {busStartMin} min voor.
 						</p>
 					{/if}
 					<p>
@@ -280,7 +293,8 @@
 					{#if busAtEnd}
 						<p class="notice">
 							De route eindigt in {walk.endPlace}, {km((walk.endStationM ?? 0) / 1000)} km van station
-							{walk.endStationName}. Reken op een bus- of taxirit naar het station.
+							{walk.endStationName}. Neem de bus of een taxi; de planning rekent daar ± {busEndMin} min
+							voor.
 						</p>
 					{/if}
 				</div>

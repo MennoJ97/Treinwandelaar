@@ -13,6 +13,14 @@ export function walkMinutes(distanceKm: number, pace: WalkPace = DEFAULT_PACE): 
 	return Math.round(moving + breaks);
 }
 
+/**
+ * Rough door-to-door estimate for a bus/taxi leg between a station and a route end that is too far
+ * to walk: ~10 min waiting plus ~3 min per km, rounded up to 5 minutes. Deliberately conservative.
+ */
+export function busMinutes(metres: number): number {
+	return Math.ceil((10 + (metres / 1000) * 3) / 5) * 5;
+}
+
 export function addMinutes(iso: string, minutes: number): string {
 	return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
 }

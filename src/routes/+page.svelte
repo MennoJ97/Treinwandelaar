@@ -4,7 +4,8 @@
 	import WalkMap from '#lib/components/WalkMap.svelte';
 	import WalkDetail from '#lib/components/WalkDetail.svelte';
 	import { formatDuration, travelBand } from '#lib/itinerary.js';
-	import { WALKABLE_STATION_M, type Reachability, type WalkSummary } from '#lib/types.js';
+	import type { Reachability, WalkSummary } from '#lib/types.js';
+	import { endLabel, needsBus, startLabel } from '#lib/walk.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -62,9 +63,6 @@
 	let hideDone = $state(false);
 	let noBus = $state(false);
 	let sort = $state<'travel' | 'rating' | 'distance' | 'name'>(data.hasNsKey ? 'travel' : 'rating');
-
-	const needsBus = (w: WalkSummary) =>
-		(w.startStationM ?? 0) > WALKABLE_STATION_M || (w.endStationM ?? 0) > WALKABLE_STATION_M;
 
 	const visible = $derived.by(() => {
 		const list = data.walks.filter((w) => {
@@ -197,8 +195,8 @@
 							<button type="button" onclick={() => select(w.id)}>
 								<span class="name">{w.name}</span>
 								<span class="stations">
-									{w.startStationName ?? w.startPlace}
-									{w.isLoop ? '(rondje)' : `naar ${w.endStationName ?? w.endPlace}`}
+									{startLabel(w)}
+									{w.isLoop ? '(rondje)' : `naar ${endLabel(w)}`}
 									{#if needsBus(w)}<em>met bus</em>{/if}
 									{#if w.status === 'done'}<em class="done">gelopen</em>{/if}
 								</span>

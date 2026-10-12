@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	addMinutes,
 	amsterdamIso,
+	busMinutes,
 	formatDuration,
 	nextSaturdayMorning,
 	travelBand,
@@ -12,6 +13,11 @@ describe('itinerary', () => {
 	it('estimates walking time with breaks per full 10 km', () => {
 		expect(walkMinutes(9, { speedKmh: 4.5, breakMinPer10Km: 20 })).toBe(120);
 		expect(walkMinutes(14.5, { speedKmh: 4.5, breakMinPer10Km: 20 })).toBe(213);
+	});
+
+	it('estimates bus legs conservatively, in 5-minute steps', () => {
+		expect(busMinutes(6503)).toBe(30); // Wageningen → Ede-Wageningen
+		expect(busMinutes(2000)).toBe(20);
 	});
 
 	it('uses the right Amsterdam UTC offset in summer and winter', () => {

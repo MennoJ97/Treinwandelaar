@@ -1,3 +1,8 @@
 {
+	"wandelnet:113": { "endStation": "ED" },
+	"wandelnet:99": { "startStation": "AMF" },
+	"wandelnet:124": { "endStation": "AMR" },
+	"wandelnet:1084": { "startStation": "VL" },
+	"wandelnet:119": { "endStation": "GVC" },
 	"wandelnet:1329": { "endStation": "MDB" }
 }

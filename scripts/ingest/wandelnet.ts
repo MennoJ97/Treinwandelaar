@@ -141,7 +141,9 @@ async function main() {
 					end?.code ?? null,
 					start?.metres ?? null,
 					end?.metres ?? null,
-					start && end && start.code === end.code ? 1 : 0,
+					// A loop if the route itself returns to its start, not merely shares a station with it
+					// (bus-leg walks can start and end at the same station without being a loop).
+					haversine(track[0], track.at(-1)!) < MAX_STATION_DISTANCE_M ? 1 : 0,
 					distanceKm,
 					stated,
 					page.description,
