@@ -15,20 +15,26 @@
 		{ band: 'near', label: '< 30' },
 		{ band: 'medium', label: '30–60' },
 		{ band: 'far', label: '60–90' },
-		{ band: 'veryfar', label: '> 90 min' }
+		{ band: 'veryfar', label: '> 90' }
 	];
 </script>
 
 <figure class="legend" aria-label="Legenda: reistijd met de trein">
 	<figcaption>
-		Reistijd vanaf <strong>{homeName}</strong>
+		<span
+			>Reistijd<span class="from"> vanaf <strong>{homeName}</strong></span><span class="unit-cap"
+				>(min)</span
+			></span
+		>
 		<span class="day">{loading ? 'berekenen…' : dayLabel}</span>
 	</figcaption>
 	<div class="bar" aria-hidden="true">
 		{#each steps as s (s.band)}<span style="background: var(--band-{s.band})"></span>{/each}
 	</div>
 	<ol class="ticks">
-		{#each steps as s (s.band)}<li>{s.label}</li>{/each}
+		{#each steps as s, i (s.band)}<li>
+				{s.label}{#if i === steps.length - 1}<span class="unit"> min</span>{/if}
+			</li>{/each}
 	</ol>
 	<p class="none"><span class="swatch" aria-hidden="true"></span>geen trein</p>
 </figure>
@@ -58,6 +64,11 @@
 
 	.day {
 		display: block;
+		color: var(--muted);
+	}
+
+	.unit-cap {
+		display: none;
 		color: var(--muted);
 	}
 
@@ -105,18 +116,45 @@
 		background: var(--band-unknown);
 	}
 
-	/* Small screens: the map is a 45vh strip; keep the key compact in its corner. */
+	/* Small screens: the map is a 45vh strip, and the station picker sits right under it, so the key
+	   drops the station and keeps to one caption line in its corner. */
 	@media (max-width: 799px) {
 		.legend {
 			left: 8px;
 			right: auto;
-			bottom: 24px;
-			width: 200px;
-			padding: 7px 9px 6px;
+			bottom: 8px;
+			width: min(13.5rem, 62vw);
+			padding: 6px 8px 5px;
+			font-size: 0.75rem;
 		}
 
+		figcaption {
+			display: flex;
+			justify-content: space-between;
+			gap: 8px;
+			margin-bottom: 5px;
+			white-space: nowrap;
+		}
+
+		/* "min" moves into the caption, so four ticks fit a narrow key. */
+		.from,
+		.unit,
 		.none {
 			display: none;
+		}
+
+		.unit-cap {
+			display: inline;
+			margin-left: 0.3em;
+		}
+
+		.day {
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.bar {
+			height: 7px;
 		}
 	}
 </style>

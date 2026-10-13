@@ -126,10 +126,12 @@
 </div>
 
 <style>
+	/* The label moves above the box once the box would get too narrow to show a station name. */
 	.picker {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 8px;
+		gap: 0 8px;
 	}
 
 	label {
@@ -139,7 +141,7 @@
 
 	.field {
 		position: relative;
-		flex: 1;
+		flex: 1 1 12rem;
 		min-width: 0;
 	}
 

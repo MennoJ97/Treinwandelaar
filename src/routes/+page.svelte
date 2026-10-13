@@ -133,6 +133,19 @@
 	let hideDisrupted = $state(false);
 	let sort = $state<'travel' | 'rating' | 'distance' | 'name'>('travel');
 
+	/** Small screens fold the filters away so the list starts under the map; this says how many bite. */
+	let filtersOpen = $state(false);
+	const activeFilters = $derived(
+		[
+			maxTravel < 180,
+			maxKm < 25,
+			shown.length < collections.filter((c) => countBy[c]).length,
+			hideDone,
+			noBus,
+			hideDisrupted
+		].filter(Boolean).length
+	);
+
 	const visible = $derived.by(() => {
 		const list = data.walks.filter((w) => {
 			const t = minutesTo(w);
@@ -221,7 +234,20 @@
 				<StationPicker stations={data.stations} bind:value={home} label="Ik vertrek vanaf" />
 			</header>
 
-			<div class="filters">
+			<button
+				type="button"
+				class="filters-toggle"
+				aria-expanded={filtersOpen}
+				aria-controls="filters"
+				onclick={() => (filtersOpen = !filtersOpen)}
+			>
+				<span>{dayOptions.find((o) => o.ymd === day)?.label ?? day}</span>
+				<span class="toggle-label"
+					>Filters{#if activeFilters}<span class="badge tabular">{activeFilters}</span>{/if}</span
+				>
+			</button>
+
+			<div class="filters" id="filters" class:open={filtersOpen}>
 				<label>
 					<span>Reisdag</span>
 					<select class="day" bind:value={day}>
@@ -345,6 +371,9 @@
 <style>
 	.app {
 		display: grid;
+		/* minmax(0, …): an auto column grows to its widest child's min-content, and with the phone's
+		   text size turned up that dragged the whole page, bar and map included, past the screen. */
+		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: auto 45vh auto;
 		min-height: 100vh;
 	}
@@ -359,7 +388,11 @@
 		border-bottom: 1px solid var(--line);
 	}
 
+	/* With big phone text the bar can't hold it all: "mhjansen.nl" gives way, the app name doesn't. */
 	.brand {
+		display: flex;
+		align-items: baseline;
+		min-width: 0;
 		margin: 0;
 		font-size: var(--step-0);
 		font-weight: 400;
@@ -372,7 +405,14 @@
 	}
 
 	.brand .up {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		color: var(--muted);
+	}
+
+	.theme-toggle {
+		flex: none;
 	}
 
 	.brand .up:hover {
@@ -454,20 +494,93 @@
 
 	.filters > label {
 		display: grid;
-		grid-template-columns: 8.5rem 1fr 3.2rem;
+		grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 8px;
 		color: var(--muted);
 	}
 
 	.filters output {
+		min-width: 3.2rem;
 		color: var(--ink);
 		font-weight: 600;
 		text-align: right;
 	}
 
+	/* A range input is ~130px wide unless told otherwise; let it take whatever the row leaves. */
 	.filters input[type='range'] {
+		width: 100%;
+		min-width: 0;
+		margin: 0;
 		accent-color: var(--rail);
+	}
+
+	.filters-toggle {
+		display: none;
+	}
+
+	/* Small screens: the filters fold away behind a bar that shows the day and how many filters bite. */
+	@media (max-width: 799px) {
+		.filters-toggle {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			gap: 12px;
+			width: calc(100% - 40px);
+			margin: 8px 20px 4px;
+			padding: 8px 12px;
+			border: 1px solid var(--line);
+			border-radius: var(--radius);
+			background: var(--surface);
+			font-size: var(--step--1);
+			cursor: pointer;
+		}
+
+		.toggle-label {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			font-weight: 600;
+		}
+
+		.toggle-label::after {
+			content: '';
+			width: 6px;
+			height: 6px;
+			margin: 0 2px 3px 2px;
+			border: solid currentColor;
+			border-width: 0 1.5px 1.5px 0;
+			transform: rotate(45deg);
+		}
+
+		.filters-toggle[aria-expanded='true'] .toggle-label::after {
+			margin-bottom: -3px;
+			transform: rotate(-135deg);
+		}
+
+		.badge {
+			min-width: 1.4em;
+			padding: 0 5px;
+			border-radius: 999px;
+			background: var(--ink);
+			color: var(--on-accent);
+			font-size: 0.75rem;
+			text-align: center;
+			line-height: 1.5;
+		}
+
+		.filters:not(.open) {
+			display: none;
+		}
+
+		/* Thumb-sized targets: the pills and checkboxes are tapped, not clicked. */
+		.kinds button {
+			padding: 6px 12px;
+		}
+
+		.checks label {
+			padding: 4px 0;
+		}
 	}
 
 	.kinds {
@@ -510,6 +623,7 @@
 	.filters select.day,
 	.sort select {
 		grid-column: 2 / 4;
+		min-width: 0;
 		padding: 2px 4px;
 		border: 1px solid var(--line);
 		border-radius: var(--radius);
@@ -577,7 +691,8 @@
 
 	.numbers {
 		display: flex;
-		gap: 14px;
+		flex-wrap: wrap;
+		gap: 0 14px;
 		margin-top: 2px;
 		font-size: var(--step--1);
 	}
