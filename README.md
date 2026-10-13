@@ -23,6 +23,7 @@ Without `NS_API_KEY`, stations come from OpenStreetMap and the app works without
 | Step               | Source                                                    | Gives                                                      |
 | ------------------ | --------------------------------------------------------- | ---------------------------------------------------------- |
 | `ingest:stations`  | NS Stations API, or OSM Overpass as fallback              | ~400 NL stations with NS codes                             |
+| `ingest:gtfs`      | OVapi GTFS (gtfs.ovapi.nl/nl, ~250 MB, daily), rail only  | the timetable for offline travel times, two months ahead   |
 | `ingest:wandelnet` | wandelnet.nl/ns-wandelingen, route pages, review tab, GPX | route line, distance, start/end, description, star ratings |
 | `ingest:nsnl`      | ns.nl/dagje-uit/wandelen pages                            | photos, paved %, dogs policy                               |
 
@@ -30,6 +31,10 @@ Raw responses are cached in `data/raw` (re-download with `-- --refresh`), at mos
 Route ends are matched to the nearest station within 1.5 km. Walks that end in a village without a station
 fall back to the nearest one within 12 km and are flagged as needing a bus. Fix mismatches in
 `scripts/ingest/overrides.json`.
+
+Travel times on the map come from that timetable (a connection-scan planner, a few ms per home
+station), and NS's disruptions API flags walks whose route runs along works or a disruption on the
+chosen day. The NS trip planner is only used for the exact trains in a walk's detail panel.
 
 ## Deploy
 

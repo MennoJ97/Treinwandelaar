@@ -83,7 +83,34 @@ export interface TripOption {
 }
 
 /** Fastest planned trip from the home station, per destination station code. */
-export type Reachability = Record<string, { minutes: number; transfers: number } | null>;
+export type Reachability = Record<
+	string,
+	{
+		minutes: number;
+		transfers: number;
+		/** Ids of disruptions/works on the way there that day (the way back is taken as the reverse). */
+		disruptions?: string[];
+	} | null
+>;
+
+export interface Disruption {
+	id: string;
+	type: 'werkzaamheden' | 'storing';
+	title: string;
+	period: string | null;
+	situation: string | null;
+	advices: string[];
+}
+
+export interface ReachabilityResponse {
+	date: string;
+	source: 'timetable' | 'ns';
+	times: Reachability;
+	disruptions: Record<string, Disruption>;
+	/** Stations with no trains that day, and the works that close them. */
+	closed?: Record<string, string[]>;
+	incomplete: boolean;
+}
 
 /** Walks further than this from a station need a bus/taxi leg. */
 export const WALKABLE_STATION_M = 1500;

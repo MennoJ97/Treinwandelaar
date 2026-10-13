@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
@@ -15,6 +16,7 @@
 	import {
 		COLLECTION_LABELS,
 		WALKABLE_STATION_M,
+		type Disruption,
 		type Station,
 		type TripOption,
 		type WalkDetail
@@ -24,10 +26,14 @@
 		walk: WalkDetail;
 		home: Station;
 		hasNsKey: boolean;
+		/** Travel day chosen in the list (YYYY-MM-DD); the planner starts there. */
+		day: string;
+		/** Works and disruptions on this walk's train routes that day. */
+		disruptions: Disruption[];
 		onclose: () => void;
 	}
 
-	let { walk, home, hasNsKey, onclose }: Props = $props();
+	let { walk, home, hasNsKey, day, disruptions, onclose }: Props = $props();
 
 	type Load<T> =
 		| { status: 'idle' }
@@ -54,7 +60,10 @@
 		return { date: amsterdamYmd(now), time: hm };
 	}
 
-	const initial = defaultStart();
+	// Today: from now (or tomorrow if it's late). Another day: that morning.
+	// Read once on purpose: after opening, the date is yours to change here.
+	const startDay = untrack(() => day);
+	const initial = startDay === amsterdamYmd() ? defaultStart() : { date: startDay, time: '09:00' };
 	let date = $state(initial.date);
 	let time = $state(initial.time);
 	let speedKmh = $state(4.5);
@@ -243,6 +252,17 @@
 			<label>Datum <input type="date" bind:value={date} /></label>
 			<label>Vertrek vanaf <input type="time" bind:value={time} step="300" /></label>
 		</div>
+
+		{#each disruptions as d (d.id)}
+			<div class="disruption" role="note">
+				<p>
+					<strong>{d.type === 'storing' ? 'Storing' : 'Werkzaamheden'}: {d.title}</strong>
+					{#if d.period}<br /><span class="when">{d.period}</span>{/if}
+				</p>
+				{#if d.situation}<p>{d.situation}</p>{/if}
+				{#each d.advices as advice (advice)}<p class="advice">{advice}</p>{/each}
+			</div>
+		{/each}
 
 		{#if !hasNsKey}
 			<p class="notice">
@@ -619,6 +639,23 @@
 	}
 
 	.muted {
+		color: var(--muted);
+	}
+
+	.disruption {
+		margin: 0 0 12px;
+		padding: 8px 10px;
+		border-left: 3px solid var(--warn);
+		background: var(--notice-bg);
+		font-size: var(--step--1);
+	}
+
+	.disruption p {
+		margin: 0 0 4px;
+	}
+
+	.disruption .when,
+	.disruption .advice {
 		color: var(--muted);
 	}
 

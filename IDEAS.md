@@ -18,11 +18,11 @@ Things considered but not built yet, with what we learned. Roughly in order of v
   leave 4 minutes after it (Beesd: ±12:56 → 13:00). Consider hiding or de-emphasising trains < 10 min after.
 - **Other APIs in the Ns-App product** (same key): Disruptions (warn about works on the way out/back),
   SpoorKaart (draw the actual rail line from home to the start), Virtual Train (train length, quiet carriages).
-- **Rate limit:** free keys get 300 requests per 5 minutes on Reisinformatie, and every new home station
-  costs ~140 of them for the travel-time map (each pair is then cached for a week). Trying three new home
-  stations within five minutes hits the limit; the map stops cleanly on 429 and resumes from cache. The
-  lasting fix is an offline travel-time matrix from the OVapi GTFS (rail only, a small RAPTOR/CSA run per
-  home station), keeping the NS API for the exact trains in the detail planner.
+- **Done (2026-10-13): offline travel times.** The map now plans over the OVapi GTFS rail timetable
+  (`scripts/ingest/gtfs.ts`, `src/lib/server/railRouter.ts`) and checks NS disruptions per route; the NS
+  trip API is only used for the exact trains in the detail planner. Open: the return trip is checked as
+  the reverse of the outbound route, and transfer time is a flat 3 minutes (NS uses per-station times;
+  GTFS `transfers.txt` has them).
 
 ## More walks
 

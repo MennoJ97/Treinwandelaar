@@ -1,0 +1,66 @@
+{
+ "id": "7008338",
+ "type": "MAINTENANCE",
+ "title": "Leeuwarden - Stavoren.",
+ "isActive": true,
+ "start": "2026-10-10T05:00:00+0200",
+ "end": "2026-10-18T01:00:00+0200",
+ "period": "Zaterdag 10 oktober 5:00 uur t/m zondag 18 oktober 1:00 uur.",
+ "publicationSections": [
+  {
+   "section": {
+    "stations": [
+     {
+      "stationCode": "LW",
+      "name": "Leeuwarden"
+     },
+     {
+      "stationCode": "MG",
+      "name": "Mantgum"
+     },
+     {
+      "stationCode": "SKND",
+      "name": "Sneek Noord"
+     },
+     {
+      "stationCode": "SK",
+      "name": "Sneek"
+     },
+     {
+      "stationCode": "IJT",
+      "name": "IJlst"
+     },
+     {
+      "stationCode": "WK",
+      "name": "Workum"
+     },
+     {
+      "stationCode": "HNP",
+      "name": "Hindeloopen"
+     },
+     {
+      "stationCode": "KMW",
+      "name": "Koudum-Molkwerum"
+     },
+     {
+      "stationCode": "STV",
+      "name": "Stavoren"
+     }
+    ]
+   }
+  }
+ ],
+ "timespans": [
+  {
+   "start": "2026-10-10T05:00:00+0200",
+   "end": "2026-10-18T01:00:00+0200",
+   "period": "Zaterdag 10 oktober 5:00 uur t/m zondag 18 oktober 1:00 uur.",
+   "situation": {
+    "label": "Door werkzaamheden: tussen Leeuwarden en Stavoren rijden er bussen."
+   },
+   "advices": [
+    "Plan extra reistijd in."
+   ]
+  }
+ ]
+}

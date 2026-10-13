@@ -59,6 +59,12 @@ export class NsClient {
 		return (data.payload ?? []).map(mapStation).filter((s: Station | null): s is Station => !!s);
 	}
 
+	/** All current disruptions and announced engineering works. Cached for 10 minutes. */
+	async disruptions(): Promise<unknown[]> {
+		const data = await this.cachedGet('/reisinformatie-api/api/v3/disruptions', {}, 600);
+		return Array.isArray(data) ? data : (data.payload ?? []);
+	}
+
 	async trips(opts: {
 		from: string;
 		to: string;

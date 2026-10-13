@@ -57,6 +57,33 @@ create table if not exists user_walk (
 	done_date text
 );
 
+-- Rail timetable from the OVapi GTFS (scripts/ingest/gtfs.ts), for the offline travel-time map.
+create table if not exists gtfs_service_date (
+	service_id text not null,
+	date text not null,               -- YYYYMMDD
+	primary key (date, service_id)
+);
+
+create table if not exists gtfs_trip (
+	trip_id integer primary key,
+	service_id text not null,
+	name text                         -- "Intercity", "Sprinter", "Stoptrein RS18", "Bus"…
+);
+
+create table if not exists gtfs_stop_time (
+	trip_id integer not null,
+	seq integer not null,
+	code text not null,               -- NS station code
+	arr integer not null,             -- seconds after midnight of the service day (may exceed 24h)
+	dep integer not null,
+	primary key (trip_id, seq)
+) without rowid;
+
+create table if not exists meta (
+	key text primary key,
+	value text not null
+);
+
 create table if not exists trip_cache (
 	key text primary key,
 	json text not null,

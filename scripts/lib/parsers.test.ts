@@ -83,3 +83,12 @@ describe('ns.nl', () => {
 		expect(page.photos[0].url).toMatch(/\/960\/.+\.webp$/);
 	});
 });
+
+describe('gtfs csv', () => {
+	it('splits quoted fields and converts times past midnight', async () => {
+		const { parseCsvLine, gtfsTime } = await import('./csv');
+		expect(parseCsvLine('1,"Den Haag, Centraal",x')).toEqual(['1', 'Den Haag, Centraal', 'x']);
+		expect(parseCsvLine('a,"say ""hi""",')).toEqual(['a', 'say "hi"', '']);
+		expect(gtfsTime('25:10:00')).toBe(25 * 3600 + 600);
+	});
+});

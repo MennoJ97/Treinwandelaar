@@ -5,11 +5,13 @@
 	import WalkDetail from '#lib/components/WalkDetail.svelte';
 	import Mark from '#lib/components/Mark.svelte';
 	import StationPicker from '#lib/components/StationPicker.svelte';
-	import { formatDuration, travelBand } from '#lib/itinerary.js';
+	import { amsterdamYmd, formatDuration, nextSaturdayMorning, travelBand } from '#lib/itinerary.js';
 	import {
 		COLLECTION_LABELS,
 		type Collection,
+		type Disruption,
 		type Reachability,
+		type ReachabilityResponse,
 		type WalkSummary
 	} from '#lib/types.js';
 	import { endLabel, needsBus, startLabel } from '#lib/walk.js';
@@ -41,20 +43,42 @@
 
 	const homeStation = $derived(data.stations.find((s) => s.code === home) ?? data.stations[0]);
 
-	// --- Travel times from home ---------------------------------------------------------------------
+	// --- Travel day: next week, defaulting to the coming Saturday -----------------------------------
+	let day = $state(nextSaturdayMorning().slice(0, 10));
+	const dayOptions = Array.from({ length: 8 }, (_, i) => {
+		const date = new Date(Date.now() + i * 24 * 3600_000);
+		const ymd = amsterdamYmd(date);
+		const label = date.toLocaleDateString('nl-NL', {
+			weekday: 'short',
+			day: 'numeric',
+			month: 'short',
+			timeZone: 'Europe/Amsterdam'
+		});
+		return { ymd, label: i === 0 ? `vandaag, ${label}` : i === 1 ? `morgen, ${label}` : label };
+	});
+
+	// --- Travel times from home, and disruptions on the way ----------------------------------------
 	let reachability = $state<Reachability>({});
+	let disruptions = $state<Record<string, Disruption>>({});
+	let closed = $state<Record<string, string[]>>({});
+	let reachSource = $state<'timetable' | 'ns'>('timetable');
 	let reachStatus = $state<'idle' | 'loading' | 'error' | 'incomplete'>('idle');
 
 	$effect(() => {
-		if (!data.hasNsKey) return;
 		const controller = new AbortController();
 		// Drop the previous home's times at once: showing them under the new station is worse than "–".
 		reachability = {};
+		disruptions = {};
+		closed = {};
 		reachStatus = 'loading';
-		fetch(`/api/reachability?from=${encodeURIComponent(home)}`, { signal: controller.signal })
+		const params = new URLSearchParams({ from: home, date: day });
+		fetch(`/api/reachability?${params}`, { signal: controller.signal })
 			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-			.then((r: { times: Reachability; incomplete: boolean }) => {
+			.then((r: ReachabilityResponse) => {
 				reachability = r.times;
+				disruptions = r.disruptions;
+				closed = r.closed ?? {};
+				reachSource = r.source;
 				reachStatus = r.incomplete ? 'incomplete' : 'idle';
 			})
 			.catch(() => {
@@ -65,6 +89,17 @@
 
 	const minutesTo = (w: WalkSummary) =>
 		w.startStation ? reachability[w.startStation]?.minutes : undefined;
+
+	/** Works or disruptions on the way out or (taken as the reverse route) back, on the travel day. */
+	function walkDisruptions(w: WalkSummary): Disruption[] {
+		const ids = new Set<string>();
+		for (const code of [w.startStation, w.endStation]) {
+			if (!code) continue;
+			for (const id of reachability[code]?.disruptions ?? []) ids.add(id);
+			for (const id of closed[code] ?? []) ids.add(id);
+		}
+		return [...ids].map((id) => disruptions[id]).filter(Boolean);
+	}
 
 	// --- Filters & sorting --------------------------------------------------------------------------
 	let maxTravel = $state(180);
@@ -82,7 +117,8 @@
 		shown = shown.includes(c) ? shown.filter((x) => x !== c) : [...shown, c];
 	}
 	let noBus = $state(false);
-	let sort = $state<'travel' | 'rating' | 'distance' | 'name'>(data.hasNsKey ? 'travel' : 'rating');
+	let hideDisrupted = $state(false);
+	let sort = $state<'travel' | 'rating' | 'distance' | 'name'>('travel');
 
 	const visible = $derived.by(() => {
 		const list = data.walks.filter((w) => {
@@ -92,6 +128,7 @@
 			if (!shown.includes(w.collection)) return false;
 			if (hideDone && w.status === 'done') return false;
 			if (noBus && needsBus(w)) return false;
+			if (hideDisrupted && walkDisruptions(w).length) return false;
 			return true;
 		});
 		const by: Record<typeof sort, (a: WalkSummary, b: WalkSummary) => number> = {
@@ -155,6 +192,8 @@
 					walk={data.selected}
 					home={homeStation}
 					hasNsKey={data.hasNsKey}
+					{day}
+					disruptions={walkDisruptions(data.selected)}
 					onclose={() => select(null)}
 				/>
 			{/key}
@@ -164,14 +203,17 @@
 			</header>
 
 			<div class="filters">
-				{#if data.hasNsKey}
-					<label>
-						<span>Max. reistijd heen</span>
-						<input type="range" min="30" max="180" step="15" bind:value={maxTravel} />
-						<output class="tabular">{maxTravel >= 180 ? 'alles' : formatDuration(maxTravel)}</output
-						>
-					</label>
-				{/if}
+				<label>
+					<span>Reisdag</span>
+					<select class="day" bind:value={day}>
+						{#each dayOptions as o (o.ymd)}<option value={o.ymd}>{o.label}</option>{/each}
+					</select>
+				</label>
+				<label>
+					<span>Max. reistijd heen</span>
+					<input type="range" min="30" max="180" step="15" bind:value={maxTravel} />
+					<output class="tabular">{maxTravel >= 180 ? 'alles' : formatDuration(maxTravel)}</output>
+				</label>
 				<label>
 					<span>Max. afstand</span>
 					<input type="range" min="8" max="25" step="1" bind:value={maxKm} />
@@ -193,11 +235,14 @@
 				<div class="checks">
 					<label><input type="checkbox" bind:checked={hideDone} /> Verberg gelopen</label>
 					<label><input type="checkbox" bind:checked={noBus} /> Alleen station tot station</label>
+					<label
+						><input type="checkbox" bind:checked={hideDisrupted} /> Zonder werkzaamheden of storingen</label
+					>
 				</div>
 				<label class="sort">
 					<span>Sorteer op</span>
 					<select bind:value={sort}>
-						{#if data.hasNsKey}<option value="travel">reistijd</option>{/if}
+						<option value="travel">reistijd</option>
 						<option value="rating">waardering</option>
 						<option value="distance">afstand</option>
 						<option value="name">naam</option>
@@ -207,13 +252,15 @@
 
 			{#if !data.hasNsKey}
 				<p class="notice">
-					Reistijden en treinen zijn uit. Zet een <code>NS_API_KEY</code> in <code>.env</code> (gratis
-					via apiportal.ns.nl).
+					Zonder <code>NS_API_KEY</code> in <code>.env</code> geen werkzaamheden, storingen en vertrektijden;
+					de reistijden komen wel uit de dienstregeling.
 				</p>
-			{:else if reachStatus === 'loading'}
-				<p class="hint" role="status">
-					Reistijden vanaf {homeStation?.name} berekenen… De eerste keer voor een station duurt dat even
-					(NS-planner, ±10 seconden); daarna is het direct.
+			{/if}
+			{#if reachStatus === 'loading'}
+				<p class="hint" role="status">Reistijden vanaf {homeStation?.name} berekenen…</p>
+			{:else if reachStatus === 'idle' && reachSource === 'ns'}
+				<p class="hint">
+					Deze dag valt buiten de geladen dienstregeling; reistijden komen van de NS-planner.
 				</p>
 			{:else if reachStatus === 'incomplete'}
 				<p class="notice">
@@ -232,6 +279,7 @@
 				<ul class="walks">
 					{#each visible as w (w.id)}
 						{@const t = minutesTo(w)}
+						{@const hits = walkDisruptions(w)}
 						<li>
 							<button type="button" onclick={() => select(w.id)}>
 								<span class="name">{w.name}</span>
@@ -240,13 +288,16 @@
 									{w.isLoop ? '(rondje)' : `naar ${endLabel(w)}`}
 									{#if needsBus(w)}<em>met bus</em>{/if}
 									{#if w.status === 'done'}<em class="done">gelopen</em>{/if}
-								</span>
-								<span class="numbers tabular">
-									{#if data.hasNsKey}
-										<span class="travel band-{travelBand(t)}"
-											>{t != null ? formatDuration(t) : '–'}</span
+									{#if hits.length}
+										<em class="disrupted"
+											>{hits.some((d) => d.type === 'storing') ? 'storing' : 'werkzaamheden'}</em
 										>
 									{/if}
+								</span>
+								<span class="numbers tabular">
+									<span class="travel band-{travelBand(t)}"
+										>{t != null ? formatDuration(t) : '–'}</span
+									>
 									<span>{km(w.distanceKm)} km</span>
 									{#if w.ratingAvg != null}<span>★ {w.ratingAvg.toLocaleString('nl-NL')}</span>{/if}
 									<span class="kind">{COLLECTION_LABELS[w.collection]}</span>
@@ -259,14 +310,12 @@
 				<p class="hint">Geen wandelingen binnen deze filters. Verruim de reistijd of afstand.</p>
 			{/if}
 
-			{#if data.hasNsKey}
-				<div class="legend" aria-label="Legenda reistijd">
-					<span class="band-near">&lt; 30 min</span>
-					<span class="band-medium">30–60</span>
-					<span class="band-far">60–90</span>
-					<span class="band-veryfar">&gt; 90 min</span>
-				</div>
-			{/if}
+			<div class="legend" aria-label="Legenda reistijd">
+				<span class="band-near">&lt; 30 min</span>
+				<span class="band-medium">30–60</span>
+				<span class="band-far">60–90</span>
+				<span class="band-veryfar">&gt; 90 min</span>
+			</div>
 			<p class="credits">Routes: Wandelnet en NS. Alleen voor persoonlijk gebruik.</p>
 		{/if}
 	</aside>
@@ -437,6 +486,7 @@
 		gap: 4px 16px;
 	}
 
+	.filters select.day,
 	.sort select {
 		grid-column: 2 / 4;
 		padding: 2px 4px;
@@ -494,6 +544,10 @@
 		margin-left: 6px;
 		font-style: normal;
 		color: var(--warn);
+	}
+
+	.stations em.disrupted {
+		font-weight: 700;
 	}
 
 	.stations em.done {

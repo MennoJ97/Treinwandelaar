@@ -17,14 +17,16 @@
 		"ingest:stations": "tsx --env-file-if-exists=.env scripts/ingest/stations.ts",
 		"ingest:wandelnet": "tsx --env-file-if-exists=.env scripts/ingest/wandelnet.ts",
 		"ingest:nsnl": "tsx --env-file-if-exists=.env scripts/ingest/nsnl.ts",
-		"ingest": "npm run ingest:stations && npm run ingest:wandelnet && npm run ingest:paden && npm run ingest:nsnl",
-		"ingest:paden": "tsx --env-file-if-exists=.env scripts/ingest/paden.ts"
+		"ingest": "npm run ingest:stations && npm run ingest:gtfs && npm run ingest:wandelnet && npm run ingest:paden && npm run ingest:nsnl",
+		"ingest:paden": "tsx --env-file-if-exists=.env scripts/ingest/paden.ts",
+		"ingest:gtfs": "tsx --env-file-if-exists=.env scripts/ingest/gtfs.ts"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^6.0.0",
 		"@sveltejs/kit": "^3.0.0",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
 		"@types/node": "^24",
+		"@types/yauzl": "^3.4.0",
 		"node-html-parser": "^9.0.4",
 		"prettier": "^3.8.3",
 		"prettier-plugin-svelte": "^4.1.0",
@@ -40,6 +42,7 @@
 		"#lib/*": "./src/lib/*"
 	},
 	"dependencies": {
-		"maplibre-gl": "^6.14.0"
+		"maplibre-gl": "^6.14.0",
+		"yauzl": "^3.4.0"
 	}
 }
