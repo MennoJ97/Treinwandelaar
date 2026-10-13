@@ -4,13 +4,13 @@ import { db, homeStation, ns } from '#lib/server/context.js';
 import { getWalk, listWalks, wandelnetUpdated } from '#lib/server/walks.js';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = ({ url }) => {
+export const load: PageServerLoad = ({ url, locals }) => {
 	const conn = db();
 	const selectedId = url.searchParams.get('walk');
-	const selected = selectedId ? getWalk(conn, selectedId) : null;
+	const selected = selectedId ? getWalk(conn, selectedId, locals.user) : null;
 	if (selectedId && !selected) error(404, 'Deze wandeling bestaat niet (meer).');
 	return {
-		walks: listWalks(conn),
+		walks: listWalks(conn, locals.user),
 		selected,
 		stations: conn.prepare('select * from stations order by name').all() as unknown as Station[],
 		defaultHome: homeStation(),

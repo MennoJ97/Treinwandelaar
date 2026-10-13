@@ -45,6 +45,12 @@ docker compose run --rm ingest   # first fill, then e.g. weekly from cron
 
 Set `ORIGIN` and the Traefik labels in `docker-compose.yml` to match your setup, with an auth middleware in front.
 
+"Wil ik lopen", "Gelopen", your rating and notes are stored per user, taken from the `X-authentik-username`
+header that Authentik's forward-auth sets (list it in the middleware's `authResponseHeaders`). Traefik
+replaces any copy of that header a client sends, so don't publish the app's port past Traefik. Without the
+header, all visitors share the user `local`. That is also where ratings from before per-user storage end up;
+to claim them, run `update user_walk set username = '<you>' where username = 'local'`.
+
 ## Data and licences
 
 The code is MIT-licensed (see `LICENSE`). That covers the code only, not the data it fetches, and this

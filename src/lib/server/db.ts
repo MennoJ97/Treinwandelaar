@@ -2,6 +2,21 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+/** Who the personal layer belongs to when no Authentik username comes with the request. */
+export const LOCAL_USER = 'local';
+
+/* Personal layer, one row per (user, walk). */
+const USER_WALK = `
+create table if not exists user_walk (
+	username text not null,           -- X-authentik-username, or LOCAL_USER
+	walk_id text not null references walks(id) on delete cascade,
+	status text check (status in ('wishlist', 'done')),
+	own_rating integer check (own_rating between 1 and 5),
+	notes text,
+	done_date text,
+	primary key (username, walk_id)
+);`;
+
 const SCHEMA = `
 create table if not exists stations (
 	code text primary key,
@@ -49,13 +64,7 @@ create table if not exists walk_photos (
 	primary key (walk_id, url)
 );
 
-create table if not exists user_walk (
-	walk_id text primary key references walks(id) on delete cascade,
-	status text check (status in ('wishlist', 'done')),
-	own_rating integer check (own_rating between 1 and 5),
-	notes text,
-	done_date text
-);
+${USER_WALK}
 
 -- Rail timetable from the OVapi GTFS (scripts/ingest/gtfs.ts), for the offline travel-time map.
 create table if not exists gtfs_service_date (
@@ -98,10 +107,15 @@ export function openDb(path = process.env.DATABASE_PATH ?? 'data/treinwandelaar.
 	mkdirSync(dirname(path), { recursive: true });
 	const db = new DatabaseSync(path);
 	db.exec('pragma journal_mode = wal; pragma foreign_keys = on;');
-	db.exec(SCHEMA);
-	migrate(db);
+	initSchema(db);
 	instance = db;
 	return db;
+}
+
+/** Create missing tables and bring older databases up to date. */
+export function initSchema(db: DatabaseSync) {
+	db.exec(SCHEMA);
+	migrate(db);
 }
 
 /** Additive migrations for databases created before a column existed. */
@@ -111,6 +125,21 @@ function migrate(db: DatabaseSync) {
 	);
 	if (!columns.has('collection'))
 		db.exec(`alter table walks add column collection text not null default 'ns-wandeling'`);
+
+	// The personal layer used to be single-user (keyed by walk_id alone); its rows go to LOCAL_USER.
+	const userColumns = (db.prepare('pragma table_info(user_walk)').all() as { name: string }[]).map(
+		(c) => c.name
+	);
+	if (!userColumns.includes('username'))
+		transaction(db, () => {
+			db.exec('alter table user_walk rename to user_walk_single');
+			db.exec(USER_WALK);
+			db.prepare(
+				`insert into user_walk (username, walk_id, status, own_rating, notes, done_date)
+				 select ?, walk_id, status, own_rating, notes, done_date from user_walk_single`
+			).run(LOCAL_USER);
+			db.exec('drop table user_walk_single');
+		});
 }
 
 /** Run `fn` in a transaction; node:sqlite has no built-in helper. */
