@@ -88,7 +88,7 @@ export type Reachability = Record<
 	{
 		minutes: number;
 		transfers: number;
-		/** Ids of disruptions/works on the way there that day (the way back is taken as the reverse). */
+		/** Ids of disruptions/works on this route that day. */
 		disruptions?: string[];
 	} | null
 >;
@@ -105,7 +105,10 @@ export interface Disruption {
 export interface ReachabilityResponse {
 	date: string;
 	source: 'timetable' | 'ns';
+	/** Out: fastest trip from home to each station, leaving 08:00–10:00. */
 	times: Reachability;
+	/** Back: fastest trip from each station home, arriving 15:00–20:00. Planned, not mirrored. */
+	back: Reachability;
 	disruptions: Record<string, Disruption>;
 	/** Stations with no trains that day, and the works that close them. */
 	closed?: Record<string, string[]>;

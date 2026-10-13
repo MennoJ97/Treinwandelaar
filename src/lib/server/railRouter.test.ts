@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDay, fastestRoutes, TRANSFER_SECONDS } from './railRouter';
+import { buildDay, fastestRoutes, fastestRoutesHome, TRANSFER_SECONDS } from './railRouter';
 
 const t = (hm: string) => {
 	const [h, m] = hm.split(':').map(Number);
@@ -73,5 +73,54 @@ describe('rail router (connection scan)', () => {
 		const r = fastestRoutes(day, 'C', ['A', 'XX']);
 		expect(r.get('A')).toBeNull();
 		expect(r.get('XX')).toBeNull();
+	});
+
+	it('plans the actual trip home, which need not mirror the way out', () => {
+		// Afternoon: from D back to A a direct Intercity D → A beats changing at B.
+		const back = buildDay([
+			...trip('Stoptrein', [
+				['D', '16:00'],
+				['B', '16:18']
+			]),
+			...trip('Sprinter', [
+				['B', '16:25'],
+				['A', '16:45']
+			]),
+			...trip('Intercity', [
+				['D', '16:30'],
+				['A', '16:58']
+			])
+		]);
+		const home = fastestRoutesHome(back, 'A', ['D', 'B', 'A'], {
+			fromTime: t('16:30'),
+			toTime: t('17:30')
+		});
+		expect(home.get('D')).toMatchObject({ minutes: 28, transfers: 0, legs: ['Intercity'] });
+		expect(home.get('D')?.edges).toEqual([['D', 'A']]);
+		expect(home.get('B')).toMatchObject({ minutes: 20, legs: ['Sprinter'] });
+		expect(home.get('A')?.minutes).toBe(0);
+	});
+
+	it('needs the transfer time on the way home too', () => {
+		const back = buildDay([
+			...trip('Stoptrein', [
+				['D', '16:00'],
+				['B', '16:23']
+			]),
+			...trip('Sprinter', [
+				['B', '16:25'], // 2 minutes: too tight
+				['A', '16:45']
+			]),
+			...trip('Sprinter', [
+				['B', '16:40'],
+				['A', '17:00']
+			])
+		]);
+		const home = fastestRoutesHome(back, 'A', ['D'], { fromTime: t('16:00'), toTime: t('17:30') });
+		expect(home.get('D')).toMatchObject({ minutes: 60, transfers: 1 });
+		expect(home.get('D')?.edges).toEqual([
+			['D', 'B'],
+			['B', 'A']
+		]);
 	});
 });

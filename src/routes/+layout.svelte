@@ -31,12 +31,14 @@
 		--path: #2e7a4c;
 		--warn: #a14a12;
 
-		/* Travel-time bands: an ordered ramp that avoids green, which means "walking" here. */
-		--band-near: #2a62c9;
-		--band-medium: #6b45b0;
-		--band-far: #c03f78;
-		--band-veryfar: #e07b39;
-		--band-unknown: #4d4d4a;
+		/* Travel time is a magnitude: one hue (blue, the train), strongest for walks close by and
+		   fading with distance, so what's near stands out. Validated as an ordinal ramp (monotone
+		   lightness, visible steps, lightest step >= 2:1 on the map). Grey: no train time. */
+		--band-near: #104281;
+		--band-medium: #256abf;
+		--band-far: #5598e7;
+		--band-veryfar: #86b6ef;
+		--band-unknown: #8f8f8b;
 
 		--on-accent: #ffffff;
 		--notice-bg: #fbf1ea;
@@ -58,11 +60,12 @@
 			--rail: #7fa0ee;
 			--path: #5dbb84;
 			--warn: #ee9a5c;
-			--band-near: #6e9bf0;
-			--band-medium: #a98cec;
-			--band-far: #ee7baf;
-			--band-veryfar: #f2a064;
-			--band-unknown: #a8a8a4;
+			/* Flipped for the dark map: near is brightest, far sinks toward the background. */
+			--band-near: #b7d3f6;
+			--band-medium: #6da7ec;
+			--band-far: #3987e5;
+			--band-veryfar: #1c5cab;
+			--band-unknown: #6b6b67;
 			--on-accent: #161616;
 			--notice-bg: #2a221c;
 			--shadow: rgb(0 0 0 / 0.5);
@@ -75,11 +78,12 @@
 		--rail: #7fa0ee;
 		--path: #5dbb84;
 		--warn: #ee9a5c;
-		--band-near: #6e9bf0;
-		--band-medium: #a98cec;
-		--band-far: #ee7baf;
-		--band-veryfar: #f2a064;
-		--band-unknown: #a8a8a4;
+		/* Flipped for the dark map: near is brightest, far sinks toward the background. */
+		--band-near: #b7d3f6;
+		--band-medium: #6da7ec;
+		--band-far: #3987e5;
+		--band-veryfar: #1c5cab;
+		--band-unknown: #6b6b67;
 		--on-accent: #161616;
 		--notice-bg: #2a221c;
 		--shadow: rgb(0 0 0 / 0.5);

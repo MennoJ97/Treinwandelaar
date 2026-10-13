@@ -20,8 +20,8 @@ Things considered but not built yet, with what we learned. Roughly in order of v
   SpoorKaart (draw the actual rail line from home to the start), Virtual Train (train length, quiet carriages).
 - **Done (2026-10-13): offline travel times.** The map now plans over the OVapi GTFS rail timetable
   (`scripts/ingest/gtfs.ts`, `src/lib/server/railRouter.ts`) and checks NS disruptions per route; the NS
-  trip API is only used for the exact trains in the detail planner. Open: the return trip is checked as
-  the reverse of the outbound route, and transfer time is a flat 3 minutes (NS uses per-station times;
+  trip API is only used for the exact trains in the detail planner. The trip home is planned for real (a reverse
+  scan, arriving 15:00–20:00). Open: transfer time is a flat 3 minutes (NS uses per-station times;
   GTFS `transfers.txt` has them).
 
 ## More walks

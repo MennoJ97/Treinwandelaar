@@ -107,7 +107,24 @@
 			id: 'walks-line',
 			type: 'line',
 			source: 'walks',
-			layout: { 'line-cap': 'round', 'line-join': 'round' },
+			layout: {
+				'line-cap': 'round',
+				'line-join': 'round',
+				// Near walks on top: where routes overlap, the ones you'd pick shouldn't be buried.
+				'line-sort-key': [
+					'match',
+					['get', 'band'],
+					'near',
+					4,
+					'medium',
+					3,
+					'far',
+					2,
+					'veryfar',
+					1,
+					0
+				]
+			},
 			paint: {
 				'line-color': bandColor,
 				'line-width': ['interpolate', ['linear'], ['zoom'], 7, 3, 12, 5]
@@ -147,7 +164,27 @@
 				],
 				'circle-color': ['case', ['get', 'home'], cssVar('--signal'), cssVar('--surface')],
 				'circle-stroke-color': cssVar('--ink'),
-				'circle-stroke-width': ['case', ['get', 'home'], 2.5, 1.5]
+				'circle-stroke-width': ['case', ['get', 'home'], 2.5, 1.5],
+				// At country zoom hundreds of station dots drown out the route colours; fade them in as
+				// you zoom towards a region. Home stays visible throughout.
+				'circle-opacity': [
+					'interpolate',
+					['linear'],
+					['zoom'],
+					8,
+					['case', ['get', 'home'], 1, 0],
+					9.5,
+					1
+				],
+				'circle-stroke-opacity': [
+					'interpolate',
+					['linear'],
+					['zoom'],
+					8,
+					['case', ['get', 'home'], 1, 0],
+					9.5,
+					1
+				]
 			}
 		});
 		m.addLayer({

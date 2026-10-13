@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import { db, ns } from '#lib/server/context.js';
 import { NsApiError, type NsClient } from '#lib/server/ns.js';
-import { fastestRoutes, loadDay } from '#lib/server/railRouter.js';
+import { fastestRoutes, fastestRoutesHome, loadDay, type Route } from '#lib/server/railRouter.js';
 import {
 	activeOn,
 	affectedStretches,
@@ -41,7 +41,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	const client = ns();
 	const day = loadDay(conn, date);
 	const response: ReachabilityResponse = day
-		? { date, source: 'timetable', times: {}, disruptions: {}, incomplete: false }
+		? { date, source: 'timetable', times: {}, back: {}, disruptions: {}, incomplete: false }
 		: await fromNs(client, from, codes, date);
 
 	if (day) {
@@ -49,19 +49,20 @@ export const GET: RequestHandler = async ({ url }) => {
 			...d,
 			stretches: affectedStretches(d, date)
 		}));
-		for (const [code, route] of fastestRoutes(day, from, codes)) {
-			if (!route) {
-				response.times[code] = null;
-				continue;
-			}
+		const withDisruptions = (route: Route | null) => {
+			if (!route) return null;
 			const hits = disruptions.filter((d) => affectsRoute(d.stretches, route.edges));
-			response.times[code] = {
+			for (const d of hits) response.disruptions[d.id] = publicPart(d);
+			return {
 				minutes: route.minutes,
 				transfers: route.transfers,
 				...(hits.length && { disruptions: hits.map((d) => d.id) })
 			};
-			for (const d of hits) response.disruptions[d.id] = publicPart(d);
-		}
+		};
+		for (const [code, route] of fastestRoutes(day, from, codes))
+			response.times[code] = withDisruptions(route);
+		for (const [code, route] of fastestRoutesHome(day, from, codes))
+			response.back[code] = withDisruptions(route);
 		// A station the timetable can't reach that day may be closed by works: say why if we can.
 		for (const code of codes) {
 			if (response.times[code] !== null) continue;
@@ -137,5 +138,6 @@ async function fromNs(
 		}
 	}
 	await Promise.all(Array.from({ length: CONCURRENCY }, worker));
-	return { date, source: 'ns', times, disruptions: {}, incomplete: rateLimited };
+	// Without the timetable the way back is approximated by the way out.
+	return { date, source: 'ns', times, back: times, disruptions: {}, incomplete: rateLimited };
 }

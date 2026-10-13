@@ -22,6 +22,8 @@ export interface Day {
 	to: Int32Array;
 	trip: Int32Array;
 	tripName: Map<number, string>;
+	/** Connection indices sorted by arrival, latest first, for planning backwards from a deadline. */
+	byArrivalDesc: Int32Array;
 }
 
 export interface Route {
@@ -69,7 +71,8 @@ export function buildDay(
 		from: new Int32Array(n),
 		to: new Int32Array(n),
 		trip: new Int32Array(n),
-		tripName
+		tripName,
+		byArrivalDesc: new Int32Array(n)
 	};
 	list.forEach(([d, a, f, t, tr], i) => {
 		day.dep[i] = d;
@@ -78,6 +81,8 @@ export function buildDay(
 		day.to[i] = t;
 		day.trip[i] = tr;
 	});
+	const order = Array.from({ length: n }, (_, i) => i).sort((x, y) => day.arr[y] - day.arr[x]);
+	day.byArrivalDesc.set(order);
 	return day;
 }
 
@@ -186,6 +191,112 @@ export function fastestRoutes(
 			const target = day.index.get(code);
 			if (target === undefined) continue;
 			const route = reconstruct(day, origin, target, via, boardedAt);
+			const best = result.get(code);
+			if (
+				route &&
+				(!best ||
+					route.minutes < best.minutes ||
+					(route.minutes === best.minutes && route.transfers < best.transfers))
+			)
+				result.set(code, route);
+		}
+	}
+	return result;
+}
+
+// --- Backwards: the trip home ---------------------------------------------------------------------
+
+/**
+ * The reverse scan: latest departure from every station that still reaches `target` by `deadline`.
+ * Connections are visited by arrival, latest first. Per station we keep the connection to leave by,
+ * and per trip the connection where we get off it.
+ */
+function scanBack(day: Day, target: number, deadline: number) {
+	const n = day.codes.length;
+	const latest = new Float64Array(n).fill(-Infinity);
+	const via = new Int32Array(n).fill(-1);
+	const alightAt = new Map<number, number>(); // trip → connection index where we leave it
+	latest[target] = deadline;
+	const horizon = deadline - 8 * 3600;
+	for (const c of day.byArrivalDesc) {
+		if (day.arr[c] > deadline) continue;
+		if (day.dep[c] < horizon) break;
+		const trip = day.trip[c];
+		const to = day.to[c];
+		if (!alightAt.has(trip)) {
+			const slack = to === target ? 0 : TRANSFER_SECONDS;
+			if (day.arr[c] + slack > latest[to]) continue;
+			alightAt.set(trip, c);
+		}
+		const from = day.from[c];
+		if (day.dep[c] > latest[from]) {
+			latest[from] = day.dep[c];
+			via[from] = c;
+		}
+	}
+	return { via, alightAt };
+}
+
+function reconstructBack(
+	day: Day,
+	source: number,
+	target: number,
+	via: Int32Array,
+	alightAt: Map<number, number>
+): Route | null {
+	const edges: [string, string][] = [];
+	const legs: string[] = [];
+	let station = source;
+	let firstDeparture = -1;
+	let arrival = -1;
+	let guard = 0;
+	while (station !== target) {
+		const c = via[station];
+		if (c < 0 || guard++ > 20) return null;
+		const trip = day.trip[c];
+		const exit = alightAt.get(trip)!;
+		if (firstDeparture < 0) firstDeparture = day.dep[c];
+		for (let k = c; k <= exit; k++) {
+			if (day.trip[k] !== trip) continue;
+			edges.push([day.codes[day.from[k]], day.codes[day.to[k]]]);
+		}
+		legs.push(day.tripName.get(trip) ?? 'Trein');
+		arrival = day.arr[exit];
+		station = day.to[exit];
+	}
+	if (firstDeparture < 0) return null;
+	return {
+		minutes: Math.round((arrival - firstDeparture) / 60),
+		transfers: legs.length - 1,
+		departure: firstDeparture,
+		edges,
+		legs
+	};
+}
+
+/**
+ * Fastest trip from each source back to `homeCode`, arriving home between fromTime and toTime
+ * (deadlines every `step`): the afternoon after a walk. Shortest wins; ties go to fewer transfers.
+ */
+export function fastestRoutesHome(
+	day: Day,
+	homeCode: string,
+	sources: string[],
+	{ fromTime = 15 * 3600, toTime = 20 * 3600, step = 15 * 60 } = {}
+): Map<string, Route | null> {
+	const result = new Map<string, Route | null>(sources.map((s) => [s, null]));
+	const home = day.index.get(homeCode);
+	if (home === undefined) return result;
+	for (let deadline = fromTime; deadline <= toTime; deadline += step) {
+		const { via, alightAt } = scanBack(day, home, deadline);
+		for (const code of sources) {
+			if (code === homeCode) {
+				result.set(code, { minutes: 0, transfers: 0, departure: deadline, edges: [], legs: [] });
+				continue;
+			}
+			const source = day.index.get(code);
+			if (source === undefined) continue;
+			const route = reconstructBack(day, source, home, via, alightAt);
 			const best = result.get(code);
 			if (
 				route &&

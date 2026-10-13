@@ -5,6 +5,7 @@
 	import WalkDetail from '#lib/components/WalkDetail.svelte';
 	import Mark from '#lib/components/Mark.svelte';
 	import StationPicker from '#lib/components/StationPicker.svelte';
+	import MapLegend from '#lib/components/MapLegend.svelte';
 	import { amsterdamYmd, formatDuration, nextSaturdayMorning, travelBand } from '#lib/itinerary.js';
 	import {
 		COLLECTION_LABELS,
@@ -59,6 +60,7 @@
 
 	// --- Travel times from home, and disruptions on the way ----------------------------------------
 	let reachability = $state<Reachability>({});
+	let reachBack = $state<Reachability>({});
 	let disruptions = $state<Record<string, Disruption>>({});
 	let closed = $state<Record<string, string[]>>({});
 	let reachSource = $state<'timetable' | 'ns'>('timetable');
@@ -68,6 +70,7 @@
 		const controller = new AbortController();
 		// Drop the previous home's times at once: showing them under the new station is worse than "–".
 		reachability = {};
+		reachBack = {};
 		disruptions = {};
 		closed = {};
 		reachStatus = 'loading';
@@ -76,6 +79,7 @@
 			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
 			.then((r: ReachabilityResponse) => {
 				reachability = r.times;
+				reachBack = r.back;
 				disruptions = r.disruptions;
 				closed = r.closed ?? {};
 				reachSource = r.source;
@@ -90,14 +94,17 @@
 	const minutesTo = (w: WalkSummary) =>
 		w.startStation ? reachability[w.startStation]?.minutes : undefined;
 
-	/** Works or disruptions on the way out or (taken as the reverse route) back, on the travel day. */
+	const minutesBack = (w: WalkSummary) =>
+		w.endStation ? reachBack[w.endStation]?.minutes : undefined;
+
+	/** Works or disruptions on the train out to the start or the train home from the end, that day. */
 	function walkDisruptions(w: WalkSummary): Disruption[] {
-		const ids = new Set<string>();
-		for (const code of [w.startStation, w.endStation]) {
-			if (!code) continue;
-			for (const id of reachability[code]?.disruptions ?? []) ids.add(id);
-			for (const id of closed[code] ?? []) ids.add(id);
-		}
+		const ids = new Set<string>([
+			...((w.startStation && reachability[w.startStation]?.disruptions) || []),
+			...((w.endStation && reachBack[w.endStation]?.disruptions) || []),
+			...((w.startStation && closed[w.startStation]) || []),
+			...((w.endStation && closed[w.endStation]) || [])
+		]);
 		return [...ids].map((id) => disruptions[id]).filter(Boolean);
 	}
 
@@ -182,6 +189,11 @@
 			{reachability}
 			{selectedId}
 			onselect={select}
+		/>
+		<MapLegend
+			homeName={homeStation?.name ?? ''}
+			dayLabel={dayOptions.find((o) => o.ymd === day)?.label ?? day}
+			loading={reachStatus === 'loading'}
 		/>
 	</div>
 
@@ -280,6 +292,7 @@
 					{#each visible as w (w.id)}
 						{@const t = minutesTo(w)}
 						{@const hits = walkDisruptions(w)}
+						{@const b = minutesBack(w)}
 						<li>
 							<button type="button" onclick={() => select(w.id)}>
 								<span class="name">{w.name}</span>
@@ -298,6 +311,8 @@
 									<span class="travel band-{travelBand(t)}"
 										>{t != null ? formatDuration(t) : '–'}</span
 									>
+									{#if !w.isLoop && b != null}<span class="back">terug {formatDuration(b)}</span
+										>{/if}
 									<span>{km(w.distanceKm)} km</span>
 									{#if w.ratingAvg != null}<span>★ {w.ratingAvg.toLocaleString('nl-NL')}</span>{/if}
 									<span class="kind">{COLLECTION_LABELS[w.collection]}</span>
@@ -310,12 +325,6 @@
 				<p class="hint">Geen wandelingen binnen deze filters. Verruim de reistijd of afstand.</p>
 			{/if}
 
-			<div class="legend" aria-label="Legenda reistijd">
-				<span class="band-near">&lt; 30 min</span>
-				<span class="band-medium">30–60</span>
-				<span class="band-far">60–90</span>
-				<span class="band-veryfar">&gt; 90 min</span>
-			</div>
 			<p class="credits">Routes: Wandelnet en NS. Alleen voor persoonlijk gebruik.</p>
 		{/if}
 	</aside>
@@ -565,40 +574,36 @@
 		font-weight: 700;
 	}
 
-	.travel::before,
-	.legend span::before {
+	.back {
+		color: var(--muted);
+	}
+
+	.travel::before {
 		content: '';
 		display: inline-block;
-		width: 10px;
-		height: 4px;
-		margin-right: 5px;
+		width: 14px;
+		height: 6px;
+		margin-right: 6px;
 		vertical-align: middle;
 		border-radius: 2px;
-		background: currentColor;
+		background: var(--band-unknown);
 	}
 
-	.band-near {
-		color: var(--band-near);
+	/* The time stays in ink; the bar in front of it carries the map colour. */
+	.band-near::before {
+		background: var(--band-near);
 	}
-	.band-medium {
-		color: var(--band-medium);
+	.band-medium::before {
+		background: var(--band-medium);
 	}
-	.band-far {
-		color: var(--band-far);
+	.band-far::before {
+		background: var(--band-far);
 	}
-	.band-veryfar {
-		color: var(--band-veryfar);
+	.band-veryfar::before {
+		background: var(--band-veryfar);
 	}
-	.band-unknown {
-		color: var(--band-unknown);
-	}
-
-	.legend {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 12px;
-		padding: 12px 20px 0;
-		font-size: var(--step--1);
+	.band-unknown::before {
+		background: var(--band-unknown);
 	}
 
 	.credits {
