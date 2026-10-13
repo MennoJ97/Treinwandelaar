@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import WalkMap from '#lib/components/WalkMap.svelte';
 	import WalkDetail from '#lib/components/WalkDetail.svelte';
+	import Mark from '#lib/components/Mark.svelte';
 	import { formatDuration, travelBand } from '#lib/itinerary.js';
 	import {
 		COLLECTION_LABELS,
@@ -121,6 +122,18 @@
 </script>
 
 <div class="app">
+	<!-- "mhjansen.nl / treinwandelaar", the same order as the nav on the other mhjansen.nl sites,
+	     with the family's light/dark switch last. Outside the panel on purpose: family.js only wires
+	     up switches that exist when the page loads, and the panel re-renders. -->
+	<header class="topbar">
+		<h1 class="brand">
+			<a class="up" href="https://mhjansen.nl">mhjansen.nl</a><span class="sep" aria-hidden="true"
+				>/</span
+			><a class="here" href="/"><Mark />treinwandelaar</a>
+		</h1>
+		<button class="theme-toggle" aria-label="Donkere modus" hidden></button>
+	</header>
+
 	<div class="map-area">
 		<WalkMap
 			walks={visible}
@@ -130,10 +143,6 @@
 			{selectedId}
 			onselect={select}
 		/>
-		<!-- The light/dark switch all the mhjansen.nl sites share; static/family.js fills it in and
-		     shows it. Outside the panel on purpose: it must exist when the page loads, and the
-		     panel re-renders between list and detail. -->
-		<button class="map-btn theme-toggle" aria-label="Donkere modus" hidden></button>
 	</div>
 
 	<aside class="panel" bind:this={panel}>
@@ -148,7 +157,6 @@
 			{/key}
 		{:else}
 			<header class="intro">
-				<h1>Treinwandelaar</h1>
 				<label class="home">
 					<span>Ik vertrek vanaf</span>
 					<select bind:value={home}>
@@ -268,8 +276,47 @@
 <style>
 	.app {
 		display: grid;
-		grid-template-rows: 45vh auto;
+		grid-template-rows: auto 45vh auto;
 		min-height: 100vh;
+	}
+
+	.topbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 12px 20px;
+		background: var(--surface);
+		border-bottom: 1px solid var(--line);
+	}
+
+	.brand {
+		margin: 0;
+		font-size: var(--step-0);
+		font-weight: 400;
+		white-space: nowrap;
+	}
+
+	.brand a {
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.brand .up {
+		color: var(--muted);
+	}
+
+	.brand .up:hover {
+		color: var(--ink);
+	}
+
+	.brand .sep {
+		margin: 0 0.45em;
+		color: var(--muted);
+	}
+
+	.brand .here {
+		font-weight: 700;
 	}
 
 	/* Small screens: the map stays put and the list slides up over it, like a bottom sheet. */
@@ -278,30 +325,6 @@
 		top: 0;
 		height: 45vh;
 		z-index: 0;
-	}
-
-	/* Round, under MapLibre's zoom buttons (top-right, 10px margin, 2 × 29px). */
-	.map-btn {
-		position: absolute;
-		top: 78px;
-		right: 10px;
-		z-index: 2;
-		width: 30px;
-		height: 30px;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0;
-		border: 0;
-		border-radius: 50%;
-		background: var(--surface);
-		color: var(--muted);
-		box-shadow: 0 0 0 2px rgb(0 0 0 / 0.1);
-		cursor: pointer;
-	}
-
-	.map-btn:hover {
-		color: var(--ink);
 	}
 
 	.panel {
@@ -323,14 +346,25 @@
 			height: auto;
 		}
 
+		/* The top bar caps the floating panel: one card, bar above, list or detail below. */
+		.topbar {
+			position: fixed;
+			z-index: 2;
+			top: 12px;
+			left: 12px;
+			width: var(--panel-width);
+			height: 48px;
+			border-radius: 10px 10px 0 0;
+		}
+
 		.panel {
 			position: fixed;
-			top: 12px;
+			top: 60px;
 			left: 12px;
 			bottom: 12px;
 			width: var(--panel-width);
 			overflow-y: auto;
-			border-radius: 10px;
+			border-radius: 0 0 10px 10px;
 			box-shadow:
 				0 1px 2px var(--shadow),
 				0 8px 24px var(--shadow);
@@ -341,18 +375,10 @@
 		padding: 18px 20px 6px;
 	}
 
-	h1 {
-		margin: 0;
-		font-size: var(--step-2);
-		font-weight: 800;
-		letter-spacing: -0.01em;
-	}
-
 	.home {
 		display: flex;
 		align-items: baseline;
 		gap: 8px;
-		margin-top: 6px;
 		color: var(--muted);
 	}
 
