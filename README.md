@@ -50,14 +50,14 @@ Set `ORIGIN` and the Traefik labels in `docker-compose.yml` to match your setup,
 The code is MIT-licensed (see `LICENSE`). That covers the code only, not the data it fetches, and this
 repository contains none of it: the test fixtures are hand-written in the shape of the real pages.
 
-| Data                               | Owner                                              | Terms                                                                                                                     |
-| ---------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Walks: routes, GPX, texts, ratings | [Wandelnet](https://www.wandelnet.nl)              | Copyright and database right; [terms](https://www.wandelnet.nl/algemene-voorwaarden) art. 9.3 allow strictly own use only |
-| Photos, paved %, dogs policy       | [NS](https://www.ns.nl)                            | Copyright of NS; not licensed for reuse                                                                                   |
-| Stations, disruptions, trips       | [NS API](https://apiportal.ns.nl)                  | Your own key, under the NS API portal's conditions                                                                        |
-| Rail timetable (GTFS)              | [OVapi](https://gtfs.ovapi.nl) / Stichting OpenGeo | Free to use; don't claim to represent the transport operators                                                             |
-| Base map                           | [OpenFreeMap](https://openfreemap.org)             | © OpenMapTiles, © OpenStreetMap contributors (shown on the map)                                                           |
-| Stations without an NS key         | OpenStreetMap via Overpass                         | [ODbL](https://www.openstreetmap.org/copyright), © OpenStreetMap contributors                                             |
+| Data                               | Owner                                              | Terms                                                                                                                                                                                |
+| ---------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Walks: routes, GPX, texts, ratings | [Wandelnet](https://www.wandelnet.nl)              | Copyright and database right; [terms](https://www.wandelnet.nl/algemene-voorwaarden) art. 9.3 allow strictly own use only                                                            |
+| Photos, paved %, dogs policy       | [NS](https://www.ns.nl)                            | Copyright of NS; not licensed for reuse                                                                                                                                              |
+| Stations, disruptions, trips       | [NS API](https://apiportal.ns.nl)                  | Your own key, under the [API conditions](https://apiportal.ns.nl/voorwaarden): only to inform travellers about future journeys, no NS logo, don't suggest NS checked the information |
+| Rail timetable (GTFS)              | [OVapi](https://gtfs.ovapi.nl) / Stichting OpenGeo | Free to use; don't claim to represent the transport operators                                                                                                                        |
+| Base map                           | [OpenFreeMap](https://openfreemap.org)             | © OpenMapTiles, © OpenStreetMap contributors (shown on the map)                                                                                                                      |
+| Stations without an NS key         | OpenStreetMap via Overpass                         | [ODbL](https://www.openstreetmap.org/copyright), © OpenStreetMap contributors                                                                                                        |
 
 So: run your own copy for yourself, behind authentication, and don't publish the database, GPX files or photos.
 
