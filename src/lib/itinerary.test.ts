@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	addMinutes,
 	amsterdamIso,
+	breakMinutes,
 	busMinutes,
 	formatDuration,
 	nextSaturdayMorning,
@@ -10,9 +11,14 @@ import {
 } from './itinerary';
 
 describe('itinerary', () => {
-	it('estimates walking time with breaks per full 10 km', () => {
-		expect(walkMinutes(9, { speedKmh: 4.5, breakMinPer10Km: 20 })).toBe(120);
-		expect(walkMinutes(14.5, { speedKmh: 4.5, breakMinPer10Km: 20 })).toBe(213);
+	it('estimates walking time with breaks in proportion to distance, in 5-minute steps', () => {
+		const pace = { speedKmh: 4.5, breakMinPer10Km: 20 };
+		expect(breakMinutes(9, pace)).toBe(20); // 18 → 20
+		expect(breakMinutes(14.5, pace)).toBe(30); // 29 → 30
+		expect(breakMinutes(19.9, pace)).toBe(40); // no jump at 20 km any more
+		expect(breakMinutes(20, pace)).toBe(40);
+		expect(walkMinutes(14.5, pace)).toBe(193 + 30);
+		expect(walkMinutes(14.5, { speedKmh: 4.5, breakMinPer10Km: 0 })).toBe(193);
 	});
 
 	it('estimates bus legs conservatively, in 5-minute steps', () => {

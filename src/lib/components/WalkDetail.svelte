@@ -11,7 +11,9 @@
 		amsterdamYmd,
 		formatDuration,
 		formatTime,
-		walkMinutes
+		walkMinutes,
+		breakMinutes,
+		DEFAULT_PACE
 	} from '#lib/itinerary.js';
 	import {
 		COLLECTION_LABELS,
@@ -66,7 +68,30 @@
 	const initial = startDay === amsterdamYmd() ? defaultStart() : { date: startDay, time: '09:00' };
 	let date = $state(initial.date);
 	let time = $state(initial.time);
-	let speedKmh = $state(4.5);
+	// --- Your pace: walking speed and breaks, remembered in this browser ---------------------------
+	const PACE_KEY = 'treinwandelaar.pace';
+	let speedKmh = $state<number>(DEFAULT_PACE.speedKmh);
+	let breakMinPer10Km = $state<number>(DEFAULT_PACE.breakMinPer10Km);
+	// The server renders the defaults; the saved pace is applied once the page runs in the browser,
+	// and every change after that is saved.
+	let paceLoaded = false;
+	$effect(() => {
+		const pace = { speedKmh, breakMinPer10Km };
+		try {
+			if (!paceLoaded) {
+				paceLoaded = true;
+				const saved = JSON.parse(localStorage.getItem(PACE_KEY) ?? 'null');
+				if (typeof saved?.speedKmh === 'number' && typeof saved?.breakMinPer10Km === 'number') {
+					speedKmh = saved.speedKmh;
+					breakMinPer10Km = saved.breakMinPer10Km;
+				}
+				return;
+			}
+			localStorage.setItem(PACE_KEY, JSON.stringify(pace));
+		} catch {
+			/* no storage (private mode): fine, just not remembered */
+		}
+	});
 	/** Index of the photo open in the viewer, or null. */
 	let viewing = $state<number | null>(null);
 
@@ -109,7 +134,8 @@
 	});
 
 	// --- The walk -----------------------------------------------------------------------------------
-	const minutesWalking = $derived(walkMinutes(walk.distanceKm, { speedKmh, breakMinPer10Km: 20 }));
+	const minutesWalking = $derived(walkMinutes(walk.distanceKm, { speedKmh, breakMinPer10Km }));
+	const minutesBreak = $derived(breakMinutes(walk.distanceKm, { speedKmh, breakMinPer10Km }));
 	const walkStart = $derived.by(() => {
 		if (outbound.status === 'done' && outbound.data[outIndex])
 			return outbound.data[outIndex].arrival;
@@ -324,14 +350,28 @@
 						</p>
 					{/if}
 					<p>
-						<strong>{km(walk.distanceKm)} km wandelen</strong>, ± {formatDuration(minutesWalking)} inclusief
-						pauzes
+						<strong>{km(walk.distanceKm)} km wandelen</strong>, ± {formatDuration(minutesWalking)}
+						<span class="muted"
+							>{minutesBreak
+								? `(waarvan ${formatDuration(minutesBreak)} pauze)`
+								: '(zonder pauzes)'}</span
+						>
 					</p>
-					<label class="pace">
-						Tempo
-						<input type="range" min="3" max="6" step="0.25" bind:value={speedKmh} />
+					<div class="pace">
+						<label for="pace-speed">Tempo</label>
+						<input id="pace-speed" type="range" min="3" max="6" step="0.25" bind:value={speedKmh} />
 						<span class="tabular">{km(speedKmh)} km/u</span>
-					</label>
+						<label for="pace-break">Pauze</label>
+						<input
+							id="pace-break"
+							type="range"
+							min="0"
+							max="60"
+							step="5"
+							bind:value={breakMinPer10Km}
+						/>
+						<span class="tabular">{breakMinPer10Km} min / 10 km</span>
+					</div>
 					{#if busAtEnd}
 						<p class="notice">
 							De route eindigt in {walk.endPlace}, {km((walk.endStationM ?? 0) / 1000)} km van station
@@ -629,17 +669,19 @@
 		margin: 0 0 4px;
 	}
 
+	/* Label, slider, value: tempo and breaks aligned under each other. */
 	.pace {
-		display: flex;
+		display: grid;
+		grid-template-columns: auto minmax(0, 140px) auto;
 		align-items: center;
-		gap: 8px;
+		gap: 2px 8px;
 		font-size: var(--step--1);
 		color: var(--muted);
 	}
 
 	.pace input {
-		flex: 1;
-		max-width: 140px;
+		width: 100%;
+		margin: 0;
 		accent-color: var(--path);
 	}
 

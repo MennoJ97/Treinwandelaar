@@ -7,10 +7,14 @@ export interface WalkPace {
 
 export const DEFAULT_PACE: WalkPace = { speedKmh: 4.5, breakMinPer10Km: 20 };
 
+/** Break time for a walk: proportional to distance, rounded to 5 minutes (nobody pauses for 7). */
+export function breakMinutes(distanceKm: number, pace: WalkPace = DEFAULT_PACE): number {
+	return Math.round(((distanceKm / 10) * pace.breakMinPer10Km) / 5) * 5;
+}
+
 export function walkMinutes(distanceKm: number, pace: WalkPace = DEFAULT_PACE): number {
 	const moving = (distanceKm / pace.speedKmh) * 60;
-	const breaks = Math.floor(distanceKm / 10) * pace.breakMinPer10Km;
-	return Math.round(moving + breaks);
+	return Math.round(moving) + breakMinutes(distanceKm, pace);
 }
 
 /**
