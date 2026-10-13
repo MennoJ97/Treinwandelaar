@@ -69,6 +69,8 @@ describe('NS mapping', () => {
 		expect(t.plannedDurationMin).toBe(18);
 		expect(t.transfers).toBe(0);
 		expect(t.legs[0]).toMatchObject({
+			category: 'SPR',
+			isBus: false,
 			product: 'NS Sprinter',
 			track: '21',
 			from: 'Utrecht Centraal'

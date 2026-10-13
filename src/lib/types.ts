@@ -66,6 +66,10 @@ export interface TripLeg {
 	plannedDeparture: string;
 	track: string | null;
 	product: string;
+	/** Short category for compact display: "IC", "SPR", "ICD", "BUS"… */
+	category: string;
+	/** Replacement or regular bus rather than a train. */
+	isBus: boolean;
 	direction: string | null;
 	cancelled: boolean;
 }
@@ -98,6 +102,8 @@ export interface Disruption {
 	type: 'werkzaamheden' | 'storing';
 	title: string;
 	period: string | null;
+	/** Compact period for the collapsed title: "16–18 okt", "t/m 14 jul 2027". */
+	periodShort: string | null;
 	situation: string | null;
 	advices: string[];
 }

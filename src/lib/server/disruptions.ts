@@ -69,6 +69,7 @@ export function mapDisruption(d: any): DisruptionWithSections | null {
 		type: d.type === 'MAINTENANCE' ? 'werkzaamheden' : 'storing',
 		title: String(d.title ?? '').replace(/\.$/, ''),
 		period: d.period ?? span?.period ?? null,
+		periodShort: shortPeriod(spans),
 		situation: span?.situation?.label ?? d.situation?.label ?? null,
 		advices: [...new Set<string>((d.timespans ?? []).flatMap((t: any) => t.advices ?? []))],
 		sections,
@@ -86,6 +87,48 @@ export function mapDisruption(d: any): DisruptionWithSections | null {
  */
 export function relevant(d: DisruptionWithSections): boolean {
 	return !(d.international && d.impact <= 2);
+}
+
+const dayFmt = (ms: number, opts: Intl.DateTimeFormatOptions) =>
+	new Date(ms)
+		.toLocaleDateString('nl-NL', { timeZone: 'Europe/Amsterdam', ...opts })
+		.replace('.', '');
+
+/**
+ * A compact period for a title: "17 okt", "16–18 okt", "28 sep – 3 okt", "t/m 14 jul 2027",
+ * "vanaf 12 okt". Works ending in the small hours (NS: "t/m maandag 2:00 uur") end the day before.
+ */
+export function shortPeriod(spans: Span[], now = Date.now()): string | null {
+	if (!spans.length) return null;
+	const start = Math.min(...spans.map((s) => s.start));
+	const ends = spans.map((s) => s.end);
+	if (ends.some((e) => e === null))
+		return start <= now
+			? 'tot nader bericht'
+			: `vanaf ${dayFmt(start, { day: 'numeric', month: 'short' })}`;
+	let end = Math.max(...(ends as number[]));
+	const endHour = Number(
+		new Date(end).toLocaleString('en-GB', {
+			hour: '2-digit',
+			hour12: false,
+			timeZone: 'Europe/Amsterdam'
+		})
+	);
+	if (endHour < 5) end -= 6 * 3600_000;
+	const year = (ms: number) => dayFmt(ms, { year: 'numeric' });
+	const thisYear = year(now);
+	const withYear = (ms: number, base: Intl.DateTimeFormatOptions) =>
+		dayFmt(ms, year(ms) === thisYear ? base : { ...base, year: 'numeric' });
+	const md = { day: 'numeric', month: 'short' } as const;
+	// Running for a while already: only the end is news.
+	if (start < now - 2 * 24 * 3600_000) return `t/m ${withYear(end, md)}`;
+	const sameDay = dayFmt(start, md) === dayFmt(end, md) && year(start) === year(end);
+	if (sameDay) return withYear(start, md);
+	const sameMonth =
+		dayFmt(start, { month: 'short', year: 'numeric' }) ===
+		dayFmt(end, { month: 'short', year: 'numeric' });
+	if (sameMonth) return `${dayFmt(start, { day: 'numeric' })}–${withYear(end, md)}`;
+	return `${withYear(start, md)} – ${withYear(end, md)}`;
 }
 
 /** "…tussen Amersfoort Centraal en Apeldoorn rijden er bussen en tussen A en B…" → name pairs. */

@@ -254,14 +254,19 @@
 		</div>
 
 		{#each disruptions as d (d.id)}
-			<div class="disruption" role="note">
-				<p>
-					<strong>{d.type === 'storing' ? 'Storing' : 'Werkzaamheden'}: {d.title}</strong>
-					{#if d.period}<br /><span class="when">{d.period}</span>{/if}
-				</p>
-				{#if d.situation}<p>{d.situation}</p>{/if}
-				{#each d.advices as advice (advice)}<p class="advice">{advice}</p>{/each}
-			</div>
+			<!-- Collapsed to one line: what and when. The full story is a click away. -->
+			<details class="disruption">
+				<summary>
+					<span class="kind">{d.type === 'storing' ? 'Storing' : 'Werkzaamheden'}</span>
+					<span class="title">{d.title}</span>
+					{#if d.periodShort}<span class="when tabular">{d.periodShort}</span>{/if}
+				</summary>
+				<div class="body">
+					{#if d.period}<p class="when">{d.period}</p>{/if}
+					{#if d.situation}<p>{d.situation}</p>{/if}
+					{#each d.advices as advice (advice)}<p class="advice">{advice}</p>{/each}
+				</div>
+			</details>
 		{/each}
 
 		{#if !hasNsKey}
@@ -643,18 +648,75 @@
 	}
 
 	.disruption {
-		margin: 0 0 12px;
-		padding: 8px 10px;
+		margin: 0 0 6px;
 		border-left: 3px solid var(--warn);
 		background: var(--notice-bg);
 		font-size: var(--step--1);
 	}
 
-	.disruption p {
+	.disruption summary {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		padding: 5px 9px;
+		cursor: pointer;
+		list-style: none;
+	}
+
+	.disruption summary::-webkit-details-marker {
+		display: none;
+	}
+
+	/* A chevron that turns when opened. */
+	.disruption summary::after {
+		content: '';
+		flex: none;
+		align-self: center;
+		width: 6px;
+		height: 6px;
+		margin-left: 2px;
+		border-right: 1.5px solid var(--muted);
+		border-bottom: 1.5px solid var(--muted);
+		transform: rotate(45deg) translateY(-2px);
+		transition: transform 0.15s;
+	}
+
+	.disruption[open] summary::after {
+		transform: rotate(-135deg) translateY(-1px);
+	}
+
+	.disruption .kind {
+		flex: none;
+		font-weight: 700;
+		color: var(--warn);
+	}
+
+	.disruption .title {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.disruption[open] .title {
+		white-space: normal;
+	}
+
+	.disruption summary .when {
+		flex: none;
+		color: var(--muted);
+	}
+
+	.disruption .body {
+		padding: 0 9px 7px;
+	}
+
+	.disruption .body p {
 		margin: 0 0 4px;
 	}
 
-	.disruption .when,
+	.disruption .body .when,
 	.disruption .advice {
 		color: var(--muted);
 	}

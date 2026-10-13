@@ -114,6 +114,12 @@ export function mapTrip(t: any): TripOption {
 		arrival: normalizeTime(l.destination?.actualDateTime ?? l.destination?.plannedDateTime),
 		track: l.origin?.actualTrack ?? l.origin?.plannedTrack ?? null,
 		product: l.product?.displayName ?? l.product?.shortCategoryName ?? l.name ?? 'Trein',
+		category: String(
+			l.product?.shortCategoryName ??
+				l.product?.categoryCode ??
+				(l.product?.type === 'BUS' ? 'BUS' : 'TR')
+		).toUpperCase(),
+		isBus: l.product?.type === 'BUS',
 		direction: l.direction ?? null,
 		cancelled: Boolean(l.cancelled)
 	}));

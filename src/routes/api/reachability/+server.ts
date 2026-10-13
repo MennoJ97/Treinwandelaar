@@ -78,11 +78,20 @@ export const GET: RequestHandler = async ({ url }) => {
 };
 
 /** What the page needs; the station lists and spans stay on the server. */
-const publicPart = ({ id, type, title, period, situation, advices }: DisruptionWithSections) => ({
+const publicPart = ({
 	id,
 	type,
 	title,
 	period,
+	periodShort,
+	situation,
+	advices
+}: DisruptionWithSections) => ({
+	id,
+	type,
+	title,
+	period,
+	periodShort,
 	situation,
 	advices
 });

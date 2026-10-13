@@ -5,7 +5,8 @@ import {
 	affectedStretches,
 	affectsRoute,
 	betweenPairs,
-	mapDisruption
+	mapDisruption,
+	shortPeriod
 } from './disruptions';
 
 // Recorded from the NS disruptions API: buses between Leeuwarden and Stavoren, 10–18 October 2026.
@@ -104,5 +105,33 @@ describe('disruptions', () => {
 				['BDG', 'APN']
 			])
 		).toBe(true);
+	});
+
+	it('gives a compact period for the collapsed title', () => {
+		const at = (iso: string) => Date.parse(iso);
+		const now = at('2026-10-13T12:00:00+02:00');
+		const span = (a: string, b: string | null) => ({
+			start: at(a),
+			end: b ? at(b) : null,
+			between: []
+		});
+		// Ends at 02:00 on the 19th: really through the 18th.
+		expect(shortPeriod([span('2026-10-16T04:45:00+02:00', '2026-10-19T02:00:00+02:00')], now)).toBe(
+			'16–18 okt'
+		);
+		expect(shortPeriod([span('2026-10-17T05:00:00+02:00', '2026-10-17T23:00:00+02:00')], now)).toBe(
+			'17 okt'
+		);
+		expect(shortPeriod([span('2026-10-28T05:00:00+01:00', '2026-11-03T02:00:00+01:00')], now)).toBe(
+			'28 okt – 2 nov'
+		);
+		expect(shortPeriod([span('2026-10-01T04:00:00+02:00', '2027-07-14T02:00:00+02:00')], now)).toBe(
+			't/m 13 jul 2027'
+		);
+		expect(shortPeriod([span('2026-10-12T08:00:00+02:00', null)], now)).toBe('tot nader bericht');
+		// Leeuwarden–Stavoren, running since the 10th: only the end is news.
+		expect(shortPeriod(d.spans, now)).toBe('t/m 17 okt');
+		// Seen before it started, the whole range.
+		expect(shortPeriod(d.spans, at('2026-10-01T12:00:00+02:00'))).toBe('10–17 okt');
 	});
 });
