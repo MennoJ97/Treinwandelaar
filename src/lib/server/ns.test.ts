@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { mapStation, mapTrip, normalizeTime } from './ns';
 
-// Recorded from the real Reisinformatie API v3 (Utrecht Centraal → Culemborg), trimmed to the fields we use.
+// Recorded from the real Reisinformatie API v3 (Utrecht Centraal → Culemborg), trimmed to the fields we use
+// (share links shortened).
 const recorded = JSON.parse(
 	readFileSync(new URL('./__fixtures__/ns-trips-ut-cl.json', import.meta.url), 'utf8')
 );
