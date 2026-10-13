@@ -4,6 +4,7 @@
 	import WalkMap from '#lib/components/WalkMap.svelte';
 	import WalkDetail from '#lib/components/WalkDetail.svelte';
 	import Mark from '#lib/components/Mark.svelte';
+	import StationPicker from '#lib/components/StationPicker.svelte';
 	import { formatDuration, travelBand } from '#lib/itinerary.js';
 	import {
 		COLLECTION_LABELS,
@@ -47,6 +48,8 @@
 	$effect(() => {
 		if (!data.hasNsKey) return;
 		const controller = new AbortController();
+		// Drop the previous home's times at once: showing them under the new station is worse than "–".
+		reachability = {};
 		reachStatus = 'loading';
 		fetch(`/api/reachability?from=${encodeURIComponent(home)}`, { signal: controller.signal })
 			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
@@ -157,14 +160,7 @@
 			{/key}
 		{:else}
 			<header class="intro">
-				<label class="home">
-					<span>Ik vertrek vanaf</span>
-					<select bind:value={home}>
-						{#each data.stations as s (s.code)}
-							<option value={s.code}>{s.name}</option>
-						{/each}
-					</select>
-				</label>
+				<StationPicker stations={data.stations} bind:value={home} label="Ik vertrek vanaf" />
 			</header>
 
 			<div class="filters">
@@ -214,8 +210,11 @@
 					Reistijden en treinen zijn uit. Zet een <code>NS_API_KEY</code> in <code>.env</code> (gratis
 					via apiportal.ns.nl).
 				</p>
-			{:else if reachStatus === 'loading' && !Object.keys(reachability).length}
-				<p class="hint">Reistijden vanaf {homeStation?.name} berekenen…</p>
+			{:else if reachStatus === 'loading'}
+				<p class="hint" role="status">
+					Reistijden vanaf {homeStation?.name} berekenen… De eerste keer voor een station duurt dat even
+					(NS-planner, ±10 seconden); daarna is het direct.
+				</p>
 			{:else if reachStatus === 'incomplete'}
 				<p class="notice">
 					Nog niet alle reistijden: de NS-limiet (300 verzoeken per 5 minuten) is bereikt. Herlaad
@@ -373,25 +372,6 @@
 
 	.intro {
 		padding: 18px 20px 6px;
-	}
-
-	.home {
-		display: flex;
-		align-items: baseline;
-		gap: 8px;
-		color: var(--muted);
-	}
-
-	.home select {
-		flex: 1;
-		min-width: 0;
-		padding: 4px 6px;
-		border: 0;
-		border-bottom: 2px solid var(--signal);
-		background: none;
-		color: var(--ink);
-		font-weight: 700;
-		font-size: var(--step-1);
 	}
 
 	.filters {

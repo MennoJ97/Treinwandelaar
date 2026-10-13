@@ -6,7 +6,9 @@ import type { Reachability } from '#lib/types.js';
 import type { RequestHandler } from './$types';
 
 const WEEK_SECONDS = 7 * 24 * 3600;
-const CONCURRENCY = 3;
+// ~140 start stations: 6 at a time is ~10 s cold. The per-5-minute budget (300) is what limits us,
+// not burst rate, and a 429 is handled below.
+const CONCURRENCY = 6;
 
 /**
  * Fastest trip from `from` to every walk start station at a reference time (next Saturday 09:00).
