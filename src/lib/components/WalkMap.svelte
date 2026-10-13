@@ -1,8 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
+	import type {
+		ExpressionSpecification,
+		FilterSpecification,
+		GeoJSONSource,
+		Map as MlMap
+	} from 'maplibre-gl';
 	import type { Reachability, Station, WalkSummary } from '#lib/types.js';
 	import { travelBand } from '#lib/itinerary.js';
+	import { endLabel, startLabel } from '#lib/walk.js';
 	// MapLibre 6 looks for its worker next to its own module. In a production build that module is
 	// a renamed chunk, so the worker isn't there; importing it as an asset makes Vite emit it.
 	import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
@@ -27,10 +33,15 @@
 		[7.25, 53.55]
 	];
 
-	/** On wide screens the list panel floats over the map's left edge; keep routes out from under it. */
-	function panelPadding(base: number) {
+	/**
+	 * On wide screens the list panel floats over the map's left edge; keep routes out from under it.
+	 * `legend` also keeps them clear of the legend in the bottom corner, so a route's end marker
+	 * doesn't land behind it.
+	 */
+	function panelPadding(base: number, legend = false) {
 		const wide = window.matchMedia('(min-width: 800px)').matches;
-		return wide ? { top: base, bottom: base, right: base, left: 412 + base } : base;
+		if (!wide) return { top: base, right: base, left: base, bottom: base + (legend ? 40 : 0) };
+		return { top: base, right: base, left: 412 + base, bottom: base + (legend ? 110 : 0) };
 	}
 
 	function cssVar(name: string) {
@@ -56,6 +67,44 @@
 		}))
 	});
 
+	/**
+	 * Where each route itself begins and ends (the first and last point of its line, which is not
+	 * always at the station). A loop has one point, its start.
+	 */
+	const endFeatures = $derived({
+		type: 'FeatureCollection' as const,
+		features: walks.flatMap((w) => {
+			const band = travelBand(w.startStation ? reachability[w.startStation]?.minutes : null);
+			const ends = [
+				{
+					kind: 'start',
+					label: startLabel(w),
+					caption: w.isLoop ? 'start en eind' : 'start',
+					at: w.geometry[0]
+				}
+			];
+			if (!w.isLoop)
+				ends.push({ kind: 'end', label: endLabel(w), caption: 'eind', at: w.geometry.at(-1)! });
+			return ends.map(({ at, ...props }) => ({
+				type: 'Feature' as const,
+				properties: { id: w.id, band, ...props },
+				geometry: { type: 'Point' as const, coordinates: at }
+			}));
+		})
+	});
+
+	const selectedFilter = (): FilterSpecification => ['==', ['get', 'id'], selectedId ?? ''];
+
+	/** The selected walk's stations are labelled by its own end markers; don't name them twice. */
+	const stationLabelFilter = (): FilterSpecification => {
+		const walk = walks.find((w) => w.id === selectedId);
+		const codes: (string | null)[] = [];
+		// Where a bus is needed the marker names the village, so the station keeps its own label.
+		if (walk && startLabel(walk) === walk.startStationName) codes.push(walk.startStation);
+		if (walk && endLabel(walk) === walk.endStationName) codes.push(walk.endStation);
+		return ['!', ['in', ['get', 'code'], ['literal', codes]]];
+	};
+
 	const stationFeatures = $derived.by(() => {
 		const used = new Set(walks.flatMap((w) => [w.startStation, w.endStation]));
 		used.add(home);
@@ -78,6 +127,7 @@
 	function addOverlay(m: MlMap) {
 		m.addSource('walks', { type: 'geojson', data: walkFeatures });
 		m.addSource('stations', { type: 'geojson', data: stationFeatures });
+		m.addSource('walk-ends', { type: 'geojson', data: endFeatures });
 
 		const bandColor = [
 			'match',
@@ -92,6 +142,20 @@
 			cssVar('--band-veryfar'),
 			cssVar('--band-unknown')
 		] as unknown as string;
+		// Near walks on top: where routes overlap, the ones you'd pick shouldn't be buried.
+		const bandSortKey: ExpressionSpecification = [
+			'match',
+			['get', 'band'],
+			'near',
+			4,
+			'medium',
+			3,
+			'far',
+			2,
+			'veryfar',
+			1,
+			0
+		];
 
 		m.addLayer({
 			id: 'walks-casing',
@@ -110,31 +174,32 @@
 			layout: {
 				'line-cap': 'round',
 				'line-join': 'round',
-				// Near walks on top: where routes overlap, the ones you'd pick shouldn't be buried.
-				'line-sort-key': [
-					'match',
-					['get', 'band'],
-					'near',
-					4,
-					'medium',
-					3,
-					'far',
-					2,
-					'veryfar',
-					1,
-					0
-				]
+				'line-sort-key': bandSortKey
 			},
 			paint: {
 				'line-color': bandColor,
 				'line-width': ['interpolate', ['linear'], ['zoom'], 7, 3, 12, 5]
 			}
 		});
+		// Terminus rings, as on a metro map: hollow, in the route's own colour, just wider than the
+		// line so the end reads as an end rather than a round line cap.
+		m.addLayer({
+			id: 'walk-ends',
+			type: 'circle',
+			source: 'walk-ends',
+			layout: { 'circle-sort-key': bandSortKey },
+			paint: {
+				'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 2.5, 12, 4.5],
+				'circle-color': cssVar('--map-casing'),
+				'circle-stroke-color': bandColor,
+				'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 7, 1.75, 12, 2.5]
+			}
+		});
 		m.addLayer({
 			id: 'walks-selected',
 			type: 'line',
 			source: 'walks',
-			filter: ['==', ['get', 'id'], selectedId ?? ''],
+			filter: selectedFilter(),
 			layout: { 'line-cap': 'round', 'line-join': 'round' },
 			paint: {
 				'line-color': cssVar('--ink'),
@@ -192,6 +257,7 @@
 			type: 'symbol',
 			source: 'stations',
 			minzoom: 9,
+			filter: stationLabelFilter(),
 			layout: {
 				'text-field': ['get', 'name'],
 				'text-size': 12,
@@ -203,6 +269,58 @@
 				'text-color': cssVar('--ink'),
 				'text-halo-color': cssVar('--surface'),
 				'text-halo-width': 1.5
+			}
+		});
+		// The selected walk: a solid dot where you set off, a ring where you finish, both named.
+		m.addLayer({
+			id: 'walk-ends-selected',
+			type: 'circle',
+			source: 'walk-ends',
+			filter: selectedFilter(),
+			paint: {
+				'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 5, 12, 7],
+				'circle-color': [
+					'case',
+					['==', ['get', 'kind'], 'start'],
+					cssVar('--ink'),
+					cssVar('--surface')
+				],
+				'circle-stroke-color': [
+					'case',
+					['==', ['get', 'kind'], 'start'],
+					cssVar('--surface'),
+					cssVar('--ink')
+				],
+				'circle-stroke-width': ['case', ['==', ['get', 'kind'], 'start'], 2, 3]
+			}
+		});
+		m.addLayer({
+			id: 'walk-ends-selected-labels',
+			type: 'symbol',
+			source: 'walk-ends',
+			filter: selectedFilter(),
+			layout: {
+				'text-field': [
+					'format',
+					['get', 'label'],
+					{ 'font-scale': 1 },
+					'\n',
+					{},
+					['get', 'caption'],
+					{ 'font-scale': 0.85, 'text-color': cssVar('--muted') }
+				],
+				'text-size': 13,
+				'text-font': ['Noto Sans Bold'],
+				// Above the marker, clear of the legend in the bottom corner. Always shown, and the
+				// basemap's own place names make way for it.
+				'text-anchor': 'bottom',
+				'text-offset': [0, -0.8],
+				'text-allow-overlap': true
+			},
+			paint: {
+				'text-color': cssVar('--ink'),
+				'text-halo-color': cssVar('--surface'),
+				'text-halo-width': 1.75
 			}
 		});
 	}
@@ -251,16 +369,21 @@
 
 	$effect(() => {
 		if (!ready || !map) return;
-		const data = [walkFeatures, stationFeatures] as const;
+		const data = [walkFeatures, stationFeatures, endFeatures] as const;
 		// Mid style swap the sources are briefly gone; addOverlay picks up the latest data then.
 		(map.getSource('walks') as GeoJSONSource | undefined)?.setData(data[0]);
 		(map.getSource('stations') as GeoJSONSource | undefined)?.setData(data[1]);
+		(map.getSource('walk-ends') as GeoJSONSource | undefined)?.setData(data[2]);
 	});
 
 	$effect(() => {
 		if (!ready || !map) return;
-		if (map.getLayer('walks-selected'))
-			map.setFilter('walks-selected', ['==', ['get', 'id'], selectedId ?? '']);
+		// Mid style swap the layers are briefly gone; addOverlay applies the selection then.
+		if (map.getLayer('walks-selected')) {
+			for (const id of ['walks-selected', 'walk-ends-selected', 'walk-ends-selected-labels'])
+				map.setFilter(id, selectedFilter());
+			map.setFilter('station-labels', stationLabelFilter());
+		}
 		const walk = walks.find((w) => w.id === selectedId);
 		if (!walk) return;
 		const lngs = walk.geometry.map((p) => p[0]);
@@ -270,7 +393,7 @@
 				[Math.min(...lngs), Math.min(...lats)],
 				[Math.max(...lngs), Math.max(...lats)]
 			],
-			{ padding: panelPadding(48), maxZoom: 14, duration: 800 }
+			{ padding: panelPadding(56, true), maxZoom: 14, duration: 800 }
 		);
 	});
 </script>
