@@ -3,6 +3,9 @@
 	import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
 	import type { Reachability, Station, WalkSummary } from '#lib/types.js';
 	import { travelBand } from '#lib/itinerary.js';
+	// MapLibre 6 looks for its worker next to its own module. In a production build that module is
+	// a renamed chunk, so the worker isn't there; importing it as an asset makes Vite emit it.
+	import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 
 	interface Props {
 		walks: WalkSummary[];
@@ -173,6 +176,7 @@
 		(async () => {
 			const maplibregl = await import('maplibre-gl');
 			if (disposed) return;
+			maplibregl.setWorkerUrl(workerUrl);
 			const m = new maplibregl.Map({
 				container,
 				style: styleUrl(),
