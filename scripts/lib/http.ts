@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const RAW_DIR = process.env.RAW_CACHE_DIR ?? 'data/raw';
@@ -8,6 +8,16 @@ const MIN_INTERVAL_MS = 1000;
 const REFRESH = process.argv.includes('--refresh');
 
 let lastRequest = 0;
+let oldest: Date | null = null;
+
+/** When the oldest response this run used was downloaded: a cache hit is as old as its file. */
+export function oldestFetch(): Date | null {
+	return oldest;
+}
+
+function used(at: Date) {
+	if (!oldest || at < oldest) oldest = at;
+}
 
 /**
  * Fetch text with an on-disk cache and at most one request per second.
@@ -21,7 +31,10 @@ export async function fetchCached(url: string, init: RequestInit = {}): Promise<
 			.update(url + (init.body ?? ''))
 			.digest('hex')
 	);
-	if (!REFRESH && existsSync(file)) return readFileSync(file, 'utf8');
+	if (!REFRESH && existsSync(file)) {
+		used(statSync(file).mtime);
+		return readFileSync(file, 'utf8');
+	}
 
 	const wait = lastRequest + MIN_INTERVAL_MS - Date.now();
 	if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -35,5 +48,6 @@ export async function fetchCached(url: string, init: RequestInit = {}): Promise<
 	const text = await res.text();
 	mkdirSync(RAW_DIR, { recursive: true });
 	writeFileSync(file, text);
+	used(new Date());
 	return text;
 }

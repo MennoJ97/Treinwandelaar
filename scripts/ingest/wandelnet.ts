@@ -8,8 +8,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { openDb } from '../../src/lib/server/db';
 import { haversine, lineLengthKm, nearest, type LngLat } from '../../src/lib/geo';
 import type { Collection, Station } from '../../src/lib/types';
-import { fetchCached } from '../lib/http';
-import { pruneStale, saveWalk } from '../lib/store';
+import { fetchCached, oldestFetch } from '../lib/http';
+import { pruneStale, recordFetched, saveWalk } from '../lib/store';
 import { WANDELNET, parseGpx, parseList, parseReviews, parseRoutePage } from '../lib/wandelnet';
 
 const COLLECTIONS: { path: string; collection: Collection }[] = [
@@ -172,6 +172,7 @@ async function main() {
 		console.log(`Stored ${count}/${list.length} from ${path}.`);
 	}
 
+	recordFetched(db, 'wandelnet', oldestFetch());
 	const pruned = pruneStale(
 		db,
 		COLLECTIONS.map((c) => c.collection),

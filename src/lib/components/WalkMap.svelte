@@ -19,10 +19,12 @@
 		home: string;
 		reachability: Reachability;
 		selectedId: string | null;
+		/** Source line for the routes, next to the map data's own attribution. */
+		credit: string;
 		onselect: (id: string | null) => void;
 	}
 
-	let { walks, stations, home, reachability, selectedId, onselect }: Props = $props();
+	let { walks, stations, home, reachability, selectedId, credit, onselect }: Props = $props();
 
 	let container: HTMLDivElement;
 	let map: MlMap | undefined = $state();
@@ -337,7 +339,7 @@
 				style: styleUrl(),
 				bounds: NL_BOUNDS,
 				fitBoundsOptions: { padding: panelPadding(20) },
-				attributionControl: { compact: true }
+				attributionControl: { compact: true, customAttribution: credit }
 			});
 			m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 			m.on('load', () => {

@@ -15,7 +15,13 @@
 		type ReachabilityResponse,
 		type WalkSummary
 	} from '#lib/types.js';
-	import { endLabel, needsBus, startLabel } from '#lib/walk.js';
+	import {
+		endLabel,
+		needsBus,
+		startLabel,
+		WANDELNET_MELDPUNT,
+		wandelnetCredit
+	} from '#lib/walk.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -188,6 +194,7 @@
 			{home}
 			{reachability}
 			{selectedId}
+			credit={wandelnetCredit(data.wandelnetUpdated)}
 			onselect={select}
 		/>
 		<MapLegend
@@ -325,7 +332,12 @@
 				<p class="hint">Geen wandelingen binnen deze filters. Verruim de reistijd of afstand.</p>
 			{/if}
 
-			<p class="credits">Routes: Wandelnet en NS. Alleen voor persoonlijk gebruik.</p>
+			<p class="credits">
+				{wandelnetCredit(data.wandelnetUpdated)}; foto's en praktische info van NS. Iets mis op een
+				route?
+				<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Meld het bij Wandelnet</a>.
+				Alleen voor persoonlijk gebruik.
+			</p>
 		{/if}
 	</aside>
 </div>

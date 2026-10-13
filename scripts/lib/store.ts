@@ -85,6 +85,19 @@ export function saveWalk(db: DatabaseSync, w: WalkRecord) {
 }
 
 /**
+ * Remember how current a source's data is (`meta` key `fetched:<source>`, YYYY-MM-DD), for the
+ * credit line in the app. Pass the oldest download the run used, not the time of the run: re-runs
+ * mostly read the raw cache.
+ */
+export function recordFetched(db: DatabaseSync, source: string, at: Date | null) {
+	if (!at) return;
+	db.prepare('insert or replace into meta (key, value) values (?, ?)').run(
+		`fetched:${source}`,
+		at.toISOString().slice(0, 10)
+	);
+}
+
+/**
  * Remove walks of these collections that this run no longer produced (e.g. a path was re-cut),
  * except ones you marked or rated yourself.
  */

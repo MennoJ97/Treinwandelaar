@@ -59,6 +59,17 @@ function toSummary(r: WalkRow): WalkSummary {
 	};
 }
 
+/**
+ * How current the Wandelnet route data is (YYYY-MM-DD): the oldest download behind the NS walks and
+ * the streekpad/LAW sections, as recorded by the ingest. Null before the first ingest records it.
+ */
+export function wandelnetUpdated(db: DatabaseSync): string | null {
+	const row = db
+		.prepare(`select min(value) as date from meta where key like 'fetched:wandelnet%'`)
+		.get() as { date: string | null } | undefined;
+	return row?.date ?? null;
+}
+
 export function listWalks(db: DatabaseSync) {
 	const rows = db.prepare(`${SELECT} order by w.name`).all() as unknown as WalkRow[];
 	return rows.map(toSummary);

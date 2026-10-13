@@ -10,9 +10,9 @@
  */
 import { openDb } from '../../src/lib/server/db';
 import type { Collection, Station } from '../../src/lib/types';
-import { fetchCached } from '../lib/http';
+import { fetchCached, oldestFetch } from '../lib/http';
 import { chainStages, pickSections, sectionKm, stationHits } from '../lib/sections';
-import { pruneStale, saveWalk } from '../lib/store';
+import { pruneStale, recordFetched, saveWalk } from '../lib/store';
 import {
 	WANDELNET,
 	parseGpx,
@@ -184,6 +184,7 @@ async function main() {
 		}
 	}
 
+	recordFetched(db, 'wandelnet-paden', oldestFetch());
 	const pruned = pruneStale(
 		db,
 		OVERVIEWS.map((o) => o.collection),

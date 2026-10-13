@@ -3,7 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
-	import { endLabel, startLabel } from '#lib/walk.js';
+	import { endLabel, startLabel, WANDELNET_MELDPUNT } from '#lib/walk.js';
 	import {
 		addMinutes,
 		busMinutes,
@@ -470,6 +470,7 @@
 		{#if walk.nsUrl}<a href={walk.nsUrl} target="_blank" rel="noreferrer">Wandeling op ns.nl</a
 			>{/if}
 		{#if walk.gpxUrl}<a href={walk.gpxUrl} target="_blank" rel="noreferrer">GPX downloaden</a>{/if}
+		<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Probleem op de route melden</a>
 	</nav>
 </article>
 

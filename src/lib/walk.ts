@@ -11,3 +11,13 @@ export const startLabel = (w: WalkSummary) =>
 
 export const endLabel = (w: WalkSummary) =>
 	(needsBusAt(w.endStationM) ? w.endPlace : w.endStationName) ?? w.endPlace ?? '?';
+
+/** Where Wandelnet takes reports of problems on a route (blocked paths, missing signs…). */
+export const WANDELNET_MELDPUNT = 'https://www.wandelnet.nl/meldpunt-wandelen';
+
+/** "Routedata © Stichting Wandelnet, bijgewerkt 12-10-2026", from the ingest's YYYY-MM-DD. */
+export function wandelnetCredit(updated: string | null): string {
+	const credit = 'Routedata © Stichting Wandelnet';
+	const [y, m, d] = updated?.split('-') ?? [];
+	return d ? `${credit}, bijgewerkt ${d}-${m}-${y}` : credit;
+}
