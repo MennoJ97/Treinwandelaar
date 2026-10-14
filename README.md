@@ -94,7 +94,8 @@ So: run your own copy for yourself, behind authentication, and don't publish the
 ### The public demo
 
 With `ANONYMOUS_ACCESS=demo`, visitors who aren't signed in see only walks built from OpenStreetMap
-(`npm run ingest:osm`), never the Wandelnet or ns.nl data above. Wandelnet's terms cover what you take from
+(`npm run ingest:osm`), never the Wandelnet or ns.nl data above. Signed-in users see the OSM walks too,
+except the ones that run over the same ground as a Wandelnet walk (70% of the route within 75 m). Wandelnet's terms cover what you take from
 wandelnet.nl; OSM is a separate database, drawn by its contributors and published under the ODbL, which
 allows public reuse with attribution. Whether a route may be in OSM in the first place differs per kind:
 

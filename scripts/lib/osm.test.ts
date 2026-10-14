@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { lineLengthKm } from '../../src/lib/geo';
-import { classify, isClosed, isNsWalk, rotateLoop, stageOf, stitch, type OsmRelation } from './osm';
+import {
+	classify,
+	isClosed,
+	isNsWalk,
+	rotateLoop,
+	stageOf,
+	stitch,
+	routeIndex,
+	type OsmRelation
+} from './osm';
+import { complete } from './overpass';
 
 // Hand-written relations in the shape of Overpass `out geom` (no real OSM data in the repo).
 const way = (role: string, ...pts: [number, number][]) => ({
@@ -100,5 +110,47 @@ describe('loops', () => {
 		expect(rotated[0]).toEqual([5.01, 52.01]);
 		expect(rotated.at(-1)).toEqual([5.01, 52.01]);
 		expect(lineLengthKm(rotated)).toBeCloseTo(lineLengthKm(square), 6);
+	});
+});
+
+describe('routeIndex', () => {
+	// East-west lines at 52°N; 0.001° of latitude ≈ 111 m.
+	const along = (lat: number, from = 5, to = 5.1): [number, number][] => {
+		const pts: [number, number][] = [];
+		for (let lng = from; lng <= to + 1e-9; lng += 0.005) pts.push([lng, lat]);
+		return pts;
+	};
+	const shared = routeIndex([along(52)]);
+
+	it('sees a walk on the same paths as covered', () => {
+		expect(shared(along(52.0003))).toBe(1); // ~33 m off: the other side of the road
+	});
+
+	it('sees a parallel walk a few hundred metres away as different', () => {
+		expect(shared(along(52.004))).toBe(0);
+	});
+
+	it('measures a partial overlap', () => {
+		const half = [...along(52, 5.05, 5.1), ...along(52.01, 5.1, 5.15)];
+		expect(shared(half)).toBeGreaterThan(0.4);
+		expect(shared(half)).toBeLessThan(0.6);
+	});
+});
+
+describe('complete (Overpass answers worth caching)', () => {
+	const answer = (base: string, extra = '') =>
+		`{"osm3s": {"timestamp_osm_base": "${base}"}, ${extra} "elements": []}`;
+	const now = new Date('2026-10-14T20:00:00Z');
+
+	it('accepts a current answer, even an empty one', () => {
+		expect(complete(answer('2026-10-14T18:00:00Z'), now)).toBe(true);
+	});
+
+	it('rejects a lagging mirror, a timeout and an error page', () => {
+		expect(complete(answer('2026-07-15T15:22:01Z'), now)).toBe(false);
+		expect(
+			complete(answer('2026-10-14T18:00:00Z', '"remark": "runtime error: Query timed out",'), now)
+		).toBe(false);
+		expect(complete('<html>504 Gateway Timeout</html>', now)).toBe(false);
 	});
 });

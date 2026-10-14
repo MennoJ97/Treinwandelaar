@@ -187,12 +187,12 @@
 
 	const km = (n: number) => n.toLocaleString('nl-NL', { maximumFractionDigits: 1 });
 
-	// The demo shows only OpenStreetMap walks; signed-in users may also get OSM's local walks.
+	// The demo shows only OpenStreetMap walks; signed-in users get those Wandelnet doesn't cover.
 	const hasOsm = $derived(data.walks.some((w) => w.source === 'osm'));
 	const mapCredit = $derived(
 		data.demo
 			? osmCredit(data.osmUpdated)
-			: wandelnetCredit(data.wandelnetUpdated) + (hasOsm ? '; lokale routes © OpenStreetMap' : '')
+			: wandelnetCredit(data.wandelnetUpdated) + (hasOsm ? '; andere routes © OpenStreetMap' : '')
 	);
 </script>
 
@@ -379,15 +379,15 @@
 
 			<p class="credits">
 				{#if data.demo}
-					{osmCredit(data.osmUpdated)}: LAW-routes en streekpaden van Wandelnet, lokale routes van
-					hun beheerders.
+					{osmCredit(data.osmUpdated)}: routes van Wandelnet en andere beheerders, ingetekend door
+					vrijwilligers.
 					<a href="/api/osm-walks.geojson" data-sveltekit-reload>Download (ODbL)</a>.
 				{:else}
 					{wandelnetCredit(data.wandelnetUpdated)}; foto's en praktische info van NS. Iets mis op
 					een route?
 					<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Meld het bij Wandelnet</a>.
 					Alleen voor persoonlijk gebruik.
-					{#if hasOsm}Lokale routes © OpenStreetMap-bijdragers (ODbL).{/if}
+					{#if hasOsm}Andere routes © OpenStreetMap-bijdragers (ODbL).{/if}
 				{/if}
 			</p>
 		{/if}

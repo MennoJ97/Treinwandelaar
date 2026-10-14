@@ -1,19 +1,29 @@
 import { fetchCached, readCached } from './http';
 
-/** Public Overpass servers, tried in order; overpass-api.de is often busy (504) at peak times. */
+/**
+ * Public Overpass servers, tried in order; overpass-api.de is often busy (504) at peak times.
+ * Not overpass.private.coffee: in October 2026 it served July data and answered area queries with
+ * nothing at all.
+ */
 const ENDPOINTS = [
 	'https://overpass-api.de/api/interpreter',
-	'https://overpass.private.coffee/api/interpreter',
 	'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 	'https://overpass.kumi.systems/api/interpreter'
 ];
 
+/** A mirror whose data is older than this is lagging; its (possibly empty) answers aren't cached. */
+const MAX_AGE_DAYS = 7;
+
 /**
- * Overpass reports a query that ran out of time or memory as a 200 with a `remark`, and possibly
- * partial data: don't cache that.
+ * Whether an answer is worth caching. Overpass reports a query that ran out of time or memory as a
+ * 200 with a `remark` and possibly partial data, and a lagging mirror answers from old data.
  */
-const complete = (text: string) =>
-	text.trimStart().startsWith('{') && !/"remark":\s*"runtime (error|remark)/.test(text);
+export function complete(text: string, now = new Date()): boolean {
+	if (!text.trimStart().startsWith('{')) return false;
+	if (/"remark":\s*"runtime (error|remark)/.test(text)) return false;
+	const base = /"timestamp_osm_base":\s*"([^"]+)"/.exec(text)?.[1];
+	return !!base && now.getTime() - Date.parse(base) < MAX_AGE_DAYS * 24 * 3600_000;
+}
 
 const request = (query: string): RequestInit => ({
 	method: 'POST',
@@ -38,7 +48,7 @@ export async function queryOverpass(query: string): Promise<string> {
 	for (let round = 1; round <= ROUNDS; round++) {
 		for (const endpoint of ENDPOINTS) {
 			try {
-				return await fetchCached(endpoint, request(query), complete);
+				return await fetchCached(endpoint, request(query), (text) => complete(text));
 			} catch (err) {
 				errors.push((err as Error).message.slice(0, 120));
 			}

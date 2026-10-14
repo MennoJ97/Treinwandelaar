@@ -55,6 +55,73 @@ export function stageOf(name: string): { path: string; stage: number } | null {
 	return m ? { path: m[1].trim(), stage: Number(m[2]) } : null;
 }
 
+/**
+ * Spatial index of other routes (Wandelnet's walks), to tell whether an OSM walk covers the same ground.
+ * Segments are bucketed in a grid of `cellM` metres in a local equirectangular projection.
+ */
+export function routeIndex(lines: LngLat[][], cellM = 250) {
+	const lat0 = (52 * Math.PI) / 180;
+	const project = ([lng, lat]: LngLat): [number, number] => [
+		((lng * Math.PI) / 180) * Math.cos(lat0) * 6_371_000,
+		((lat * Math.PI) / 180) * 6_371_000
+	];
+	const cells = new Map<string, [number, number, number, number][]>();
+	for (const line of lines) {
+		const pts = line.map(project);
+		for (let i = 1; i < pts.length; i++) {
+			const [x1, y1] = pts[i - 1];
+			const [x2, y2] = pts[i];
+			for (
+				let cx = Math.floor(Math.min(x1, x2) / cellM);
+				cx <= Math.floor(Math.max(x1, x2) / cellM);
+				cx++
+			)
+				for (
+					let cy = Math.floor(Math.min(y1, y2) / cellM);
+					cy <= Math.floor(Math.max(y1, y2) / cellM);
+					cy++
+				) {
+					const key = `${cx}:${cy}`;
+					if (!cells.has(key)) cells.set(key, []);
+					cells.get(key)!.push([x1, y1, x2, y2]);
+				}
+		}
+	}
+
+	/** Distance from a point to the nearest indexed segment, if within one cell; else Infinity. */
+	function distance(p: LngLat): number {
+		const [x, y] = project(p);
+		let best = Infinity;
+		const [cx, cy] = [Math.floor(x / cellM), Math.floor(y / cellM)];
+		for (let dx = -1; dx <= 1; dx++)
+			for (let dy = -1; dy <= 1; dy++)
+				for (const [x1, y1, x2, y2] of cells.get(`${cx + dx}:${cy + dy}`) ?? []) {
+					const [vx, vy] = [x2 - x1, y2 - y1];
+					const len = vx * vx + vy * vy;
+					const t = len ? Math.max(0, Math.min(1, ((x - x1) * vx + (y - y1) * vy) / len)) : 0;
+					best = Math.min(best, Math.hypot(x - (x1 + t * vx), y - (y1 + t * vy)));
+				}
+		return best;
+	}
+
+	/** Share of `track` (sampled every ~100 m) that runs within `maxMetres` of an indexed route. */
+	return function sharedFraction(track: LngLat[], maxMetres = 75): number {
+		const samples: LngLat[] = [track[0]];
+		let since = 0;
+		for (let i = 1; i < track.length; i++) {
+			since += haversine(track[i - 1], track[i]);
+			if (since >= 100) {
+				samples.push(track[i]);
+				since = 0;
+			}
+		}
+		return samples.filter((p) => distance(p) <= maxMetres).length / samples.length;
+	};
+}
+
+/** At least this share of an OSM walk on Wandelnet's ground makes it a copy of a Wandelnet walk. */
+export const DUPLICATE_SHARE = 0.7;
+
 /** Side branches that aren't part of the walk itself. */
 const SKIP_ROLES = new Set(['alternative', 'excursion', 'approach', 'connection', 'backward']);
 

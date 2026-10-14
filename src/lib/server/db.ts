@@ -52,6 +52,7 @@ create table if not exists walks (
 	source_url text not null,
 	ns_url text,
 	gpx_url text,
+	wandelnet_duplicate integer not null default 0, -- an OSM walk that Wandelnet's data also has
 	updated_at text not null
 );
 
@@ -125,6 +126,8 @@ function migrate(db: DatabaseSync) {
 	);
 	if (!columns.has('collection'))
 		db.exec(`alter table walks add column collection text not null default 'ns-wandeling'`);
+	if (!columns.has('wandelnet_duplicate'))
+		db.exec(`alter table walks add column wandelnet_duplicate integer not null default 0`);
 
 	// The personal layer used to be single-user (keyed by walk_id alone); its rows go to LOCAL_USER.
 	const userColumns = (db.prepare('pragma table_info(user_walk)').all() as { name: string }[]).map(

@@ -1,6 +1,7 @@
 /**
  * Ingest walking routes from OpenStreetMap as station-to-station (or station-round) day walks: the
- * walks of the public demo, and the local walks for everyone. ODbL, © OpenStreetMap contributors.
+ * walks of the public demo, and for signed-in users every one that Wandelnet's data doesn't already
+ * cover (see routeIndex). ODbL, © OpenStreetMap contributors.
  *
  * - LAW routes (network=nwn) and streekpaden (rwn) are mapped stage by stage; like ../ingest/paden.ts we
  *   join the stages and cut the line into sections between stations.
@@ -16,7 +17,16 @@ import { openDb } from '../../src/lib/server/db';
 import { lineLengthKm, type LngLat } from '../../src/lib/geo';
 import type { Collection, Station } from '../../src/lib/types';
 import { oldestFetch } from '../lib/http';
-import { classify, isClosed, rotateLoop, stageOf, stitch, type OsmRelation } from '../lib/osm';
+import {
+	classify,
+	isClosed,
+	rotateLoop,
+	stageOf,
+	stitch,
+	DUPLICATE_SHARE,
+	routeIndex,
+	type OsmRelation
+} from '../lib/osm';
 import { cachedOverpass, queryOverpass } from '../lib/overpass';
 import {
 	chainStages,
@@ -102,10 +112,22 @@ async function main() {
 	);
 
 	const seen = new Set<string>();
+	// Wandelnet's walks, to spot OSM walks over the same ground (shown in the demo only).
+	const onWandelnetGround = routeIndex(
+		(
+			db.prepare(`select geometry from walks where source = 'wandelnet'`).all() as {
+				geometry: string;
+			}[]
+		).map((r) => JSON.parse(r.geometry))
+	);
+	let duplicates = 0;
 	const save = (w: Omit<WalkRecord, 'source' | 'sourceId' | 'startPlace' | 'endPlace'>) => {
 		if (seen.has(w.id)) return;
+		const wandelnetDuplicate = onWandelnetGround(w.track) >= DUPLICATE_SHARE;
+		if (wandelnetDuplicate) duplicates++;
 		saveWalk(db, {
 			...w,
+			wandelnetDuplicate,
 			source: 'osm',
 			sourceId: w.id.slice('osm:'.length),
 			startPlace: w.startStation && stationName(w.startStation),
@@ -247,7 +269,7 @@ async function main() {
 	const pruned = missing ? 0 : pruneStale(db, ['law', 'streekpad', 'lokaal'], seen, 'osm');
 	console.log(
 		`Stored ${seen.size} walks (${fromPaths} from ${paths.size} staged paths, ${loops} round walks, ` +
-			`${cut} other sections); skipped ${skipped} routes (NS walks, other networks)` +
+			`${cut} other sections, ${duplicates} also in Wandelnet's data); skipped ${skipped} routes (NS walks, other networks)` +
 			`${pruned ? `; removed ${pruned} stale` : ''}.`
 	);
 }

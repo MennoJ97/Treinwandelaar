@@ -64,10 +64,11 @@ function toSummary(r: WalkRow): WalkSummary {
 /**
  * Which walks a viewer may see (`user` null: the anonymous demo). Wandelnet's and NS's data is for
  * the signed-in users only, so the demo shows just the walks built from OpenStreetMap (ODbL). Signed-in
- * users get Wandelnet's own LAW/streekpad sections, so OSM's copies of those are hidden for them.
+ * users get everything except OSM's copies of walks Wandelnet's data already has (with its photos and
+ * ratings); the OSM ingest marks those.
  */
 const visibleTo = (user: string | null) =>
-	user === null ? `w.source = 'osm'` : `(w.source != 'osm' or w.collection = 'lokaal')`;
+	user === null ? `w.source = 'osm'` : `not w.wandelnet_duplicate`;
 
 /** YYYY-MM-DD of the last OpenStreetMap download, as recorded by the ingest. */
 export function osmUpdated(db: DatabaseSync): string | null {

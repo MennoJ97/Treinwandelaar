@@ -486,7 +486,7 @@
 				>Kaartfout melden bij OpenStreetMap</a
 			>
 		{/if}
-		{#if walk.collection !== 'lokaal'}
+		{#if walk.source === 'wandelnet'}
 			<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Probleem op de route melden</a>
 		{/if}
 	</nav>

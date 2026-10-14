@@ -3,12 +3,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { initSchema, LOCAL_USER } from './db';
 import { getWalk, listWalks, updateUserWalk } from './walks';
 
-function addWalk(db: DatabaseSync, id: string, source: string, collection: string) {
+function addWalk(db: DatabaseSync, id: string, source: string, collection: string, duplicate = 0) {
 	db.prepare(
 		`insert into walks (id, source, source_id, collection, name, distance_km, geometry, source_url,
-			updated_at) values (?, ?, ?, ?, 'Proefwandeling', 12, '[[5,52],[5.1,52.1]]',
-			'https://example.org/1', '2026-10-13')`
-	).run(id, source, id, collection);
+			wandelnet_duplicate, updated_at) values (?, ?, ?, ?, 'Proefwandeling', 12,
+			'[[5,52],[5.1,52.1]]', 'https://example.org/1', ?, '2026-10-13')`
+	).run(id, source, id, collection, duplicate);
 }
 
 function withWalk(db: DatabaseSync) {
@@ -73,6 +73,7 @@ describe('demo visibility', () => {
 	const db = freshDb();
 	addWalk(db, 'osm:law', 'osm', 'law');
 	addWalk(db, 'osm:lokaal', 'osm', 'lokaal');
+	addWalk(db, 'osm:copy', 'osm', 'law', 1);
 	addWalk(db, 'pad:law', 'wandelnet', 'law');
 	const ids = (user: string | null) =>
 		listWalks(db, user)
@@ -80,13 +81,13 @@ describe('demo visibility', () => {
 			.sort();
 
 	it('shows anonymous visitors only the OpenStreetMap walks', () => {
-		expect(ids(null)).toEqual(['osm:law', 'osm:lokaal']);
+		expect(ids(null)).toEqual(['osm:copy', 'osm:law', 'osm:lokaal']);
 		expect(getWalk(db, 'w:1', null)).toBeNull();
 		expect(getWalk(db, 'pad:law', null)).toBeNull();
 		expect(getWalk(db, 'osm:law', null)).toMatchObject({ source: 'osm', status: null });
 	});
 
-	it("gives signed-in users Wandelnet's paths instead of OSM's copies, plus the local walks", () => {
-		expect(ids('menno')).toEqual(['osm:lokaal', 'pad:law', 'w:1']);
+	it("gives signed-in users everything but OSM's copies of Wandelnet walks", () => {
+		expect(ids('menno')).toEqual(['osm:law', 'osm:lokaal', 'pad:law', 'w:1']);
 	});
 });

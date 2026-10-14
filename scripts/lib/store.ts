@@ -7,6 +7,8 @@ export interface WalkRecord {
 	id: string;
 	/** Default 'wandelnet'. */
 	source?: WalkSource;
+	/** An OSM walk that Wandelnet's data has too: shown in the demo only. */
+	wandelnetDuplicate?: boolean;
 	sourceId: string;
 	collection: Collection;
 	name: string;
@@ -33,8 +35,9 @@ export interface WalkRecord {
 const UPSERT = `
 	insert into walks (id, source, source_id, collection, name, start_place, end_place, start_station,
 		end_station, start_station_m, end_station_m, is_loop, distance_km, stated_distance_km, description,
-		accessibility, features, geometry, rating_avg, review_count, source_url, gpx_url, updated_at)
-	values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+		accessibility, features, geometry, rating_avg, review_count, source_url, gpx_url,
+		wandelnet_duplicate, updated_at)
+	values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 	on conflict(id) do update set collection = excluded.collection, name = excluded.name,
 		start_place = excluded.start_place, end_place = excluded.end_place,
 		start_station = excluded.start_station, end_station = excluded.end_station,
@@ -43,7 +46,8 @@ const UPSERT = `
 		stated_distance_km = excluded.stated_distance_km, description = excluded.description,
 		accessibility = excluded.accessibility, features = excluded.features, geometry = excluded.geometry,
 		rating_avg = excluded.rating_avg, review_count = excluded.review_count,
-		source_url = excluded.source_url, gpx_url = excluded.gpx_url, updated_at = excluded.updated_at`;
+		source_url = excluded.source_url, gpx_url = excluded.gpx_url,
+		wandelnet_duplicate = excluded.wandelnet_duplicate, updated_at = excluded.updated_at`;
 
 /** Simplified to ~8 m and rounded to ~1 m: small enough to ship every route to the map at once. */
 export function compactGeometry(track: LngLat[]): LngLat[] {
@@ -77,7 +81,8 @@ export function saveWalk(db: DatabaseSync, w: WalkRecord) {
 			w.ratingAvg,
 			w.reviewCount,
 			w.sourceUrl,
-			w.gpxUrl
+			w.gpxUrl,
+			w.wandelnetDuplicate ? 1 : 0
 		);
 		const source = w.source ?? 'wandelnet';
 		db.prepare(`delete from walk_photos where walk_id = ? and source = ?`).run(w.id, source);
