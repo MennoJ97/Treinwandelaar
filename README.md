@@ -47,9 +47,32 @@ Set `ORIGIN` and the Traefik labels in `docker-compose.yml` to match your setup,
 
 "Wil ik lopen", "Gelopen", your rating and notes are stored per user, taken from the `X-authentik-username`
 header that Authentik's forward-auth sets (list it in the middleware's `authResponseHeaders`). Traefik
-replaces any copy of that header a client sends, so don't publish the app's port past Traefik. Without the
-header, all visitors share the user `local`. That is also where ratings from before per-user storage end up;
-to claim them, run `update user_walk set username = '<you>' where username = 'local'`.
+replaces any copy of that header a client sends, so don't publish the app's port past Traefik.
+
+Without the header, `ANONYMOUS_ACCESS` decides. `demo`, the default, shows only the OpenStreetMap walks and
+saves nothing; `full` shows everything to everyone as the shared user `local`, for local or LAN-only use
+(`.env.example` sets it). Ratings from before per-user storage belong to `local`; to claim them, run
+`update user_walk set username = '<you>' where username = 'local'`.
+
+### Public demo with Authentik
+
+Authentik can let anonymous visitors through while still sending `X-authentik-username` for signed-in ones:
+the outpost checks the session first and only then the provider's **Unauthenticated Paths**. With a
+single-application forward-auth provider (paths are matched without the host), list everything except
+`/login`:
+
+```
+^/$
+^/\?
+^/__data\.json
+^/_app/
+^/api/
+^/robots\.txt$
+```
+
+Visitors then get the demo, and the "Inloggen" link (`/login`) sends them through Authentik and back.
+Deploy the app and run `npm run ingest:osm` before you add the paths, and keep `ANONYMOUS_ACCESS` unset
+or `demo`; with `full`, anonymous visitors would see everything.
 
 ## Data and licences
 
@@ -64,8 +87,33 @@ repository contains none of it: the test fixtures are hand-written in the shape 
 | Rail timetable (GTFS)              | [OVapi](https://gtfs.ovapi.nl) / Stichting OpenGeo | Free to use; don't claim to represent the transport operators                                                                                                                        |
 | Base map                           | [OpenFreeMap](https://openfreemap.org)             | © OpenMapTiles, © OpenStreetMap contributors (shown on the map)                                                                                                                      |
 | Stations without an NS key         | OpenStreetMap via Overpass                         | [ODbL](https://www.openstreetmap.org/copyright), © OpenStreetMap contributors                                                                                                        |
+| Demo walks: LAW, streekpad, local  | OpenStreetMap via Overpass                         | [ODbL](https://www.openstreetmap.org/copyright), © OpenStreetMap contributors; see below for why these routes may be in OSM at all                                                   |
 
 So: run your own copy for yourself, behind authentication, and don't publish the database, GPX files or photos.
+
+### The public demo
+
+With `ANONYMOUS_ACCESS=demo`, visitors who aren't signed in see only walks built from OpenStreetMap
+(`npm run ingest:osm`), never the Wandelnet or ns.nl data above. Wandelnet's terms cover what you take from
+wandelnet.nl; OSM is a separate database, drawn by its contributors and published under the ODbL, which
+allows public reuse with attribution. Whether a route may be in OSM in the first place differs per kind:
+
+- **LAW routes and streekpaden**: Wandelnet's LAW coordinator wrote on the OSM forum (14 May 2019) that
+  "het intekenen van LAW's en Streekpaden OK is", asking that Wandelnet be named as the source and that the
+  white-red and yellow-red marks, protected trademarks, aren't used
+  ([thread, post 14](https://community.openstreetmap.org/t/wandelroutes-law-sp-en-ns-samenwerking-met-wandelnet/86827/14)).
+  The demo credits Wandelnet and shows no marks.
+- **NS-wandelingen**: in the same thread Wandelnet refused permission
+  ([post 1](https://community.openstreetmap.org/t/wandelroutes-law-sp-en-ns-samenwerking-met-wandelnet/86827/1)).
+  Some are still in OSM; the ingest skips every route whose name or operator mentions NS.
+- **Local walks** (klompenpaden, ommetjes, nature-area routes): OSM maps routes that are marked in the field
+  ([WikiProject Nederland Wandelroutes](https://wiki.openstreetmap.org/wiki/WikiProject_Nederland_Wandelroutes)),
+  surveyed by contributors, and its [import guidelines](https://wiki.openstreetmap.org/wiki/Import/Guidelines)
+  require permission for anything copied from a third party. The operator is shown with each walk.
+
+The ODbL can't cure a route that someone copied into OSM without permission, as happened with the NS walks.
+If you run a public demo, remove a route when its owner asks. The ODbL also asks you to offer the derived
+data: the demo serves it at `/api/osm-walks.geojson`.
 
 ## Layout
 

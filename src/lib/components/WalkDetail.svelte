@@ -3,7 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
-	import { endLabel, startLabel, WANDELNET_MELDPUNT } from '#lib/walk.js';
+	import { endLabel, osmNoteUrl, startLabel, WANDELNET_MELDPUNT } from '#lib/walk.js';
 	import {
 		addMinutes,
 		busMinutes,
@@ -28,6 +28,8 @@
 		walk: WalkDetail;
 		home: Station;
 		hasNsKey: boolean;
+		/** Anonymous demo visitor: nothing to save. */
+		demo: boolean;
 		/** Travel day chosen in the list (YYYY-MM-DD); the planner starts there. */
 		day: string;
 		/** Works and disruptions on this walk's train routes that day. */
@@ -35,7 +37,7 @@
 		onclose: () => void;
 	}
 
-	let { walk, home, hasNsKey, day, disruptions, onclose }: Props = $props();
+	let { walk, home, hasNsKey, demo, day, disruptions, onclose }: Props = $props();
 
 	type Load<T> =
 		| { status: 'idle' }
@@ -429,48 +431,64 @@
 		</ul>
 	{/if}
 
-	<section class="mine" aria-labelledby="mine-title">
-		<h3 id="mine-title">Voor jezelf</h3>
-		<div class="status">
-			<button
-				type="button"
-				aria-pressed={walk.status === 'wishlist'}
-				onclick={() => save({ status: walk.status === 'wishlist' ? null : 'wishlist' })}
-				>Wil ik lopen</button
-			>
-			<button
-				type="button"
-				aria-pressed={walk.status === 'done'}
-				onclick={() => save({ status: walk.status === 'done' ? null : 'done' })}>Gelopen</button
-			>
-		</div>
-		<div class="stars" role="radiogroup" aria-label="Jouw waardering">
-			{#each [1, 2, 3, 4, 5] as n (n)}
+	{#if demo}
+		<p class="login">
+			<a href="/login" data-sveltekit-reload>Log in</a> om bij te houden welke wandelingen je wilt lopen
+			en hebt gelopen.
+		</p>
+	{:else}
+		<section class="mine" aria-labelledby="mine-title">
+			<h3 id="mine-title">Voor jezelf</h3>
+			<div class="status">
 				<button
 					type="button"
-					role="radio"
-					aria-checked={walk.ownRating === n}
-					aria-label="{n} van 5"
-					class:on={(walk.ownRating ?? 0) >= n}
-					onclick={() => save({ ownRating: walk.ownRating === n ? null : n })}>★</button
+					aria-pressed={walk.status === 'wishlist'}
+					onclick={() => save({ status: walk.status === 'wishlist' ? null : 'wishlist' })}
+					>Wil ik lopen</button
 				>
-			{/each}
-		</div>
-		<label class="notes">
-			Notities
-			<textarea
-				rows="2"
-				value={walk.notes ?? ''}
-				onchange={(e) => save({ notes: e.currentTarget.value })}></textarea>
-		</label>
-	</section>
+				<button
+					type="button"
+					aria-pressed={walk.status === 'done'}
+					onclick={() => save({ status: walk.status === 'done' ? null : 'done' })}>Gelopen</button
+				>
+			</div>
+			<div class="stars" role="radiogroup" aria-label="Jouw waardering">
+				{#each [1, 2, 3, 4, 5] as n (n)}
+					<button
+						type="button"
+						role="radio"
+						aria-checked={walk.ownRating === n}
+						aria-label="{n} van 5"
+						class:on={(walk.ownRating ?? 0) >= n}
+						onclick={() => save({ ownRating: walk.ownRating === n ? null : n })}>★</button
+					>
+				{/each}
+			</div>
+			<label class="notes">
+				Notities
+				<textarea
+					rows="2"
+					value={walk.notes ?? ''}
+					onchange={(e) => save({ notes: e.currentTarget.value })}></textarea>
+			</label>
+		</section>
+	{/if}
 
 	<nav class="links" aria-label="Bronnen">
-		<a href={walk.sourceUrl} target="_blank" rel="noreferrer">Route op Wandelnet</a>
+		<a href={walk.sourceUrl} target="_blank" rel="noreferrer"
+			>Route op {walk.source === 'osm' ? 'OpenStreetMap' : 'Wandelnet'}</a
+		>
 		{#if walk.nsUrl}<a href={walk.nsUrl} target="_blank" rel="noreferrer">Wandeling op ns.nl</a
 			>{/if}
 		{#if walk.gpxUrl}<a href={walk.gpxUrl} target="_blank" rel="noreferrer">GPX downloaden</a>{/if}
-		<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Probleem op de route melden</a>
+		{#if walk.source === 'osm'}
+			<a href={osmNoteUrl(walk.geometry[0])} target="_blank" rel="noreferrer"
+				>Kaartfout melden bij OpenStreetMap</a
+			>
+		{/if}
+		{#if walk.collection !== 'lokaal'}
+			<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Probleem op de route melden</a>
+		{/if}
 	</nav>
 </article>
 
@@ -830,6 +848,10 @@
 		color: var(--signal);
 	}
 
+	.login {
+		margin: 18px 0 0;
+		font-size: var(--step--1);
+	}
 	.notes {
 		display: grid;
 		gap: 4px;

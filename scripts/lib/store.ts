@@ -1,10 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { transaction } from '../../src/lib/server/db';
 import { simplify, type LngLat } from '../../src/lib/geo';
-import type { Collection } from '../../src/lib/types';
+import type { Collection, WalkSource } from '../../src/lib/types';
 
 export interface WalkRecord {
 	id: string;
+	/** Default 'wandelnet'. */
+	source?: WalkSource;
 	sourceId: string;
 	collection: Collection;
 	name: string;
@@ -32,7 +34,7 @@ const UPSERT = `
 	insert into walks (id, source, source_id, collection, name, start_place, end_place, start_station,
 		end_station, start_station_m, end_station_m, is_loop, distance_km, stated_distance_km, description,
 		accessibility, features, geometry, rating_avg, review_count, source_url, gpx_url, updated_at)
-	values (?, 'wandelnet', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+	values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 	on conflict(id) do update set collection = excluded.collection, name = excluded.name,
 		start_place = excluded.start_place, end_place = excluded.end_place,
 		start_station = excluded.start_station, end_station = excluded.end_station,
@@ -55,6 +57,7 @@ export function saveWalk(db: DatabaseSync, w: WalkRecord) {
 	transaction(db, () => {
 		db.prepare(UPSERT).run(
 			w.id,
+			w.source ?? 'wandelnet',
 			w.sourceId,
 			w.collection,
 			w.name,
@@ -76,11 +79,12 @@ export function saveWalk(db: DatabaseSync, w: WalkRecord) {
 			w.sourceUrl,
 			w.gpxUrl
 		);
-		db.prepare(`delete from walk_photos where walk_id = ? and source = 'wandelnet'`).run(w.id);
+		const source = w.source ?? 'wandelnet';
+		db.prepare(`delete from walk_photos where walk_id = ? and source = ?`).run(w.id, source);
 		const insert = db.prepare(
-			`insert or ignore into walk_photos (walk_id, url, caption, source, sort) values (?, ?, ?, 'wandelnet', ?)`
+			`insert or ignore into walk_photos (walk_id, url, caption, source, sort) values (?, ?, ?, ?, ?)`
 		);
-		w.photos.forEach((p, i) => insert.run(w.id, p.url, p.caption, i));
+		w.photos.forEach((p, i) => insert.run(w.id, p.url, p.caption, source, i));
 	});
 }
 
@@ -98,17 +102,22 @@ export function recordFetched(db: DatabaseSync, source: string, at: Date | null)
 }
 
 /**
- * Remove walks of these collections that this run no longer produced (e.g. a path was re-cut),
- * except ones you marked or rated yourself.
+ * Remove walks of these collections from `source` that this run no longer produced (e.g. a path was
+ * re-cut), except ones someone marked or rated.
  */
-export function pruneStale(db: DatabaseSync, collections: Collection[], keepIds: Set<string>) {
+export function pruneStale(
+	db: DatabaseSync,
+	collections: Collection[],
+	keepIds: Set<string>,
+	source: WalkSource = 'wandelnet'
+) {
 	const placeholders = collections.map(() => '?').join(', ');
 	const rows = db
 		.prepare(
-			`select id from walks where collection in (${placeholders})
+			`select id from walks where source = ? and collection in (${placeholders})
 			 and id not in (select walk_id from user_walk)`
 		)
-		.all(...collections) as { id: string }[];
+		.all(source, ...collections) as { id: string }[];
 	const stale = rows.filter((r) => !keepIds.has(r.id));
 	const del = db.prepare('delete from walks where id = ?');
 	transaction(db, () => stale.forEach((r) => del.run(r.id)));

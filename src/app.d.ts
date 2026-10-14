@@ -4,8 +4,11 @@ declare global {
 	namespace App {
 		// interface Error {}
 		interface Locals {
-			/** Authentik username (src/hooks.server.ts); the personal layer is stored per user. */
-			user: string;
+			/**
+			 * Authentik username (src/hooks.server.ts); the personal layer is stored per user.
+			 * Null for an anonymous visitor of the demo, who sees only the OpenStreetMap walks.
+			 */
+			user: string | null;
 		}
 		// interface PageData {}
 		// interface PageState {}

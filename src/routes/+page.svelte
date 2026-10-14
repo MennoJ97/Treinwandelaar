@@ -18,6 +18,7 @@
 	import {
 		endLabel,
 		needsBus,
+		osmCredit,
 		startLabel,
 		WANDELNET_MELDPUNT,
 		wandelnetCredit
@@ -185,6 +186,14 @@
 	}
 
 	const km = (n: number) => n.toLocaleString('nl-NL', { maximumFractionDigits: 1 });
+
+	// The demo shows only OpenStreetMap walks; signed-in users may also get OSM's local walks.
+	const hasOsm = $derived(data.walks.some((w) => w.source === 'osm'));
+	const mapCredit = $derived(
+		data.demo
+			? osmCredit(data.osmUpdated)
+			: wandelnetCredit(data.wandelnetUpdated) + (hasOsm ? '; lokale routes © OpenStreetMap' : '')
+	);
 </script>
 
 <div class="app">
@@ -207,7 +216,7 @@
 			{home}
 			{reachability}
 			{selectedId}
-			credit={wandelnetCredit(data.wandelnetUpdated)}
+			credit={mapCredit}
 			onselect={select}
 		/>
 		<MapLegend
@@ -224,6 +233,7 @@
 					walk={data.selected}
 					home={homeStation}
 					hasNsKey={data.hasNsKey}
+					demo={data.demo}
 					{day}
 					disruptions={walkDisruptions(data.selected)}
 					onclose={() => select(null)}
@@ -233,6 +243,13 @@
 			<header class="intro">
 				<StationPicker stations={data.stations} bind:value={home} label="Ik vertrek vanaf" />
 			</header>
+			{#if data.demo}
+				<p class="demo">
+					Demo met LAW-routes, streekpaden en lokale wandelingen uit OpenStreetMap.
+					<a href="/login" data-sveltekit-reload>Inloggen</a> voor de NS-wandelingen en om bij te houden
+					wat je wilt lopen.
+				</p>
+			{/if}
 
 			<button
 				type="button"
@@ -278,7 +295,9 @@
 					{/each}
 				</div>
 				<div class="checks">
-					<label><input type="checkbox" bind:checked={hideDone} /> Verberg gelopen</label>
+					{#if !data.demo}
+						<label><input type="checkbox" bind:checked={hideDone} /> Verberg gelopen</label>
+					{/if}
 					<label><input type="checkbox" bind:checked={noBus} /> Alleen station tot station</label>
 					<label
 						><input type="checkbox" bind:checked={hideDisrupted} /> Zonder werkzaamheden of storingen</label
@@ -359,10 +378,17 @@
 			{/if}
 
 			<p class="credits">
-				{wandelnetCredit(data.wandelnetUpdated)}; foto's en praktische info van NS. Iets mis op een
-				route?
-				<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Meld het bij Wandelnet</a>.
-				Alleen voor persoonlijk gebruik.
+				{#if data.demo}
+					{osmCredit(data.osmUpdated)}: LAW-routes en streekpaden van Wandelnet, lokale routes van
+					hun beheerders.
+					<a href="/api/osm-walks.geojson" data-sveltekit-reload>Download (ODbL)</a>.
+				{:else}
+					{wandelnetCredit(data.wandelnetUpdated)}; foto's en praktische info van NS. Iets mis op
+					een route?
+					<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Meld het bij Wandelnet</a>.
+					Alleen voor persoonlijk gebruik.
+					{#if hasOsm}Lokale routes © OpenStreetMap-bijdragers (ODbL).{/if}
+				{/if}
 			</p>
 		{/if}
 	</aside>
@@ -733,6 +759,12 @@
 		background: var(--band-unknown);
 	}
 
+	.demo {
+		margin: 4px 20px 8px;
+		padding: 6px 9px;
+		border-left: 3px solid var(--signal);
+		font-size: var(--step--1);
+	}
 	.credits {
 		margin: 12px 20px 20px;
 		color: var(--muted);

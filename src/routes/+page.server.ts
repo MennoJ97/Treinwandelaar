@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { Station } from '#lib/types.js';
 import { db, homeStation, ns } from '#lib/server/context.js';
-import { getWalk, listWalks, wandelnetUpdated } from '#lib/server/walks.js';
+import { getWalk, listWalks, osmUpdated, wandelnetUpdated } from '#lib/server/walks.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ url, locals }) => {
@@ -15,6 +15,9 @@ export const load: PageServerLoad = ({ url, locals }) => {
 		stations: conn.prepare('select * from stations order by name').all() as unknown as Station[],
 		defaultHome: homeStation(),
 		hasNsKey: ns() !== null,
-		wandelnetUpdated: wandelnetUpdated(conn)
+		/** Anonymous visitor of the public demo: OpenStreetMap walks only, nothing saved. */
+		demo: locals.user === null,
+		wandelnetUpdated: wandelnetUpdated(conn),
+		osmUpdated: osmUpdated(conn)
 	};
 };

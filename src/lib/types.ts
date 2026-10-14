@@ -12,18 +12,23 @@ export interface WalkPhoto {
 	source: string;
 }
 
-export type Collection = 'ns-wandeling' | 'ov-stapper' | 'streekpad' | 'law';
+export type Collection = 'ns-wandeling' | 'ov-stapper' | 'streekpad' | 'law' | 'lokaal';
+
+/** Where a walk's data comes from; only 'osm' (ODbL) may be shown publicly. */
+export type WalkSource = 'wandelnet' | 'osm';
 
 export const COLLECTION_LABELS: Record<Collection, string> = {
 	'ns-wandeling': 'NS-wandeling',
 	'ov-stapper': 'OV-stapper',
 	streekpad: 'Streekpad',
-	law: 'LAW-route'
+	law: 'LAW-route',
+	lokaal: 'Lokale route'
 };
 
 export interface WalkSummary {
 	id: string;
 	name: string;
+	source: WalkSource;
 	collection: Collection;
 	startStation: string | null;
 	endStation: string | null;

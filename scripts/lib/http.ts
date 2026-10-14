@@ -19,22 +19,35 @@ function used(at: Date) {
 	if (!oldest || at < oldest) oldest = at;
 }
 
-/**
- * Fetch text with an on-disk cache and at most one request per second.
- * Raw responses are kept so parsers can be re-run without hitting the source again;
- * pass --refresh to re-download.
- */
-export async function fetchCached(url: string, init: RequestInit = {}): Promise<string> {
-	const file = join(
+const cacheFile = (url: string, init: RequestInit) =>
+	join(
 		RAW_DIR,
 		createHash('sha1')
 			.update(url + (init.body ?? ''))
 			.digest('hex')
 	);
-	if (!REFRESH && existsSync(file)) {
-		used(statSync(file).mtime);
-		return readFileSync(file, 'utf8');
-	}
+
+/** The cached response for this request, or null when it was never downloaded. */
+export function readCached(url: string, init: RequestInit = {}): string | null {
+	const file = cacheFile(url, init);
+	if (!existsSync(file)) return null;
+	used(statSync(file).mtime);
+	return readFileSync(file, 'utf8');
+}
+
+/**
+ * Fetch text with an on-disk cache and at most one request per second.
+ * Raw responses are kept so parsers can be re-run without hitting the source again;
+ * pass --refresh to re-download. `accept` can reject a 200 that is really an error, so it isn't cached.
+ */
+export async function fetchCached(
+	url: string,
+	init: RequestInit = {},
+	accept: (text: string) => boolean = () => true
+): Promise<string> {
+	const file = cacheFile(url, init);
+	const cached = REFRESH ? null : readCached(url, init);
+	if (cached !== null) return cached;
 
 	const wait = lastRequest + MIN_INTERVAL_MS - Date.now();
 	if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -46,6 +59,7 @@ export async function fetchCached(url: string, init: RequestInit = {}): Promise<
 	});
 	if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
 	const text = await res.text();
+	if (!accept(text)) throw new Error(`Unusable response for ${url}: ${text.slice(0, 200)}`);
 	mkdirSync(RAW_DIR, { recursive: true });
 	writeFileSync(file, text);
 	used(new Date());

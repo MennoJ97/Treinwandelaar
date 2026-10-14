@@ -1,10 +1,11 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { Collection, WalkDetail, WalkPhoto, WalkSummary } from '../types';
+import type { Collection, WalkDetail, WalkPhoto, WalkSource, WalkSummary } from '../types';
 
 /* Row shape shared by the summary and detail queries. */
 interface WalkRow {
 	id: string;
 	name: string;
+	source: WalkSource;
 	collection: Collection;
 	start_station: string | null;
 	end_station: string | null;
@@ -38,6 +39,7 @@ function toSummary(r: WalkRow): WalkSummary {
 	return {
 		id: r.id,
 		name: r.name,
+		source: r.source,
 		collection: r.collection,
 		startStation: r.start_station,
 		endStation: r.end_station,
@@ -60,6 +62,21 @@ function toSummary(r: WalkRow): WalkSummary {
 }
 
 /**
+ * Which walks a viewer may see (`user` null: the anonymous demo). Wandelnet's and NS's data is for
+ * the signed-in users only, so the demo shows just the walks built from OpenStreetMap (ODbL). Signed-in
+ * users get Wandelnet's own LAW/streekpad sections, so OSM's copies of those are hidden for them.
+ */
+const visibleTo = (user: string | null) =>
+	user === null ? `w.source = 'osm'` : `(w.source != 'osm' or w.collection = 'lokaal')`;
+
+/** YYYY-MM-DD of the last OpenStreetMap download, as recorded by the ingest. */
+export function osmUpdated(db: DatabaseSync): string | null {
+	const row = db.prepare(`select value from meta where key = 'fetched:osm'`).get() as
+		{ value: string } | undefined;
+	return row?.value ?? null;
+}
+
+/**
  * How current the Wandelnet route data is (YYYY-MM-DD): the oldest download behind the NS walks and
  * the streekpad/LAW sections, as recorded by the ingest. Null before the first ingest records it.
  */
@@ -70,14 +87,16 @@ export function wandelnetUpdated(db: DatabaseSync): string | null {
 	return row?.date ?? null;
 }
 
-/* The personal fields (status, own rating, notes) are those of `user`. */
-export function listWalks(db: DatabaseSync, user: string) {
-	const rows = db.prepare(`${SELECT} order by w.name`).all(user) as unknown as WalkRow[];
+/* The personal fields (status, own rating, notes) are those of `user`; the demo has none. */
+export function listWalks(db: DatabaseSync, user: string | null) {
+	const rows = db
+		.prepare(`${SELECT} where ${visibleTo(user)} order by w.name`)
+		.all(user ?? '') as unknown as WalkRow[];
 	return rows.map(toSummary);
 }
 
-export function getWalk(db: DatabaseSync, id: string, user: string): WalkDetail | null {
-	const r = db.prepare(`${SELECT} where w.id = ?`).get(user, id) as
+export function getWalk(db: DatabaseSync, id: string, user: string | null): WalkDetail | null {
+	const r = db.prepare(`${SELECT} where w.id = ? and ${visibleTo(user)}`).get(user ?? '', id) as
 		(WalkRow & Record<string, string | null>) | undefined;
 	if (!r) return null;
 	const photos = db

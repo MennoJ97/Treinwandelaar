@@ -11,6 +11,7 @@ export const GET: RequestHandler = ({ params, locals }) => {
 
 /** Personal layer of the signed-in user: wishlist/done status, own rating (1–5), notes. */
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
+	if (!locals.user) error(401, 'Log in om wandelingen bij te houden.');
 	const conn = db();
 	if (!getWalk(conn, params.id, locals.user)) error(404, 'Walk not found');
 	const body = (await request.json()) as UserWalkUpdate;

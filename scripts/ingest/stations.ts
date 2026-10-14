@@ -6,7 +6,7 @@
 import { openDb, transaction } from '../../src/lib/server/db';
 import { NsClient } from '../../src/lib/server/ns';
 import type { Station } from '../../src/lib/types';
-import { fetchCached } from '../lib/http';
+import { queryOverpass } from '../lib/overpass';
 
 const OVERPASS_QUERY = `
 [out:json][timeout:90];
@@ -14,28 +14,8 @@ nwr["railway"="station"]["railway:ref"](50.7,3.3,53.6,7.3);
 out center tags;
 `;
 
-const OVERPASS_ENDPOINTS = [
-	'https://overpass-api.de/api/interpreter',
-	'https://overpass.kumi.systems/api/interpreter'
-];
-
-async function queryOverpass(): Promise<string> {
-	for (const endpoint of OVERPASS_ENDPOINTS) {
-		try {
-			return await fetchCached(endpoint, {
-				method: 'POST',
-				body: new URLSearchParams({ data: OVERPASS_QUERY }).toString(),
-				headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-			});
-		} catch (err) {
-			console.warn(`Overpass endpoint failed, trying next: ${(err as Error).message}`);
-		}
-	}
-	throw new Error('All Overpass endpoints failed');
-}
-
 async function fromOverpass(): Promise<Station[]> {
-	const text = await queryOverpass();
+	const text = await queryOverpass(OVERPASS_QUERY);
 	const { elements } = JSON.parse(text) as {
 		elements: {
 			lat?: number;
