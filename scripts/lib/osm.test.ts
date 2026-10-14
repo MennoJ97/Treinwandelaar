@@ -62,6 +62,11 @@ describe('stageOf', () => {
 	it('splits LAW/streekpad stage names', () => {
 		expect(stageOf('Marskramerpad - 14')).toEqual({ path: 'Marskramerpad', stage: 14 });
 		expect(stageOf('Floris V-pad - 03')).toEqual({ path: 'Floris V-pad', stage: 3 });
+		expect(stageOf('Elfstedenpad - 01 - Leeuwarden-Mantgum')).toEqual({
+			path: 'Elfstedenpad',
+			stage: 1
+		});
+		expect(stageOf('Rondom de Dom part 7 - Soestduinen - Driebergen-Zeist NS')).toBeNull();
 		expect(stageOf('Ommetje Lage Vuursche')).toBeNull();
 	});
 });

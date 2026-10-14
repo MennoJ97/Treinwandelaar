@@ -8,15 +8,14 @@
  * - Local walks (lwn): round walks that pass a station start there; others are cut like a path.
  * - NS-wandelingen are skipped (see isNsWalk), and so are knooppunt links and side branches.
  *
- * The Netherlands is queried in tiles, for routes near stations only, so each Overpass response stays
- * small; responses are cached like every other download (pass --refresh to re-fetch). With --partial,
- * only tiles already in the cache are used and nothing is pruned: for filling a database while the
- * rest still downloads.
+ * The routes come from Geofabrik's extract of the Netherlands, filtered with osmium (see
+ * ../lib/extract.ts); it is downloaded again when older than six days, or with --refresh.
  */
+import { dirname, join } from 'node:path';
 import { openDb } from '../../src/lib/server/db';
 import { lineLengthKm, type LngLat } from '../../src/lib/geo';
 import type { Collection, Station } from '../../src/lib/types';
-import { oldestFetch } from '../lib/http';
+import { hikingRoutes } from '../lib/extract';
 import {
 	classify,
 	isClosed,
@@ -27,7 +26,6 @@ import {
 	routeIndex,
 	type OsmRelation
 } from '../lib/osm';
-import { cachedOverpass, queryOverpass } from '../lib/overpass';
 import {
 	chainStages,
 	DEFAULT_SECTION,
@@ -44,27 +42,15 @@ const STATION_RANGE_M = 1500;
 const LOCAL_SECTION: SectionOptions = { minKm: 5, targetKm: 12, maxKm: 26 };
 const LOOP_KM = { min: 4, max: 30 };
 
-const [SOUTH, WEST, NORTH, EAST] = [50.75, 3.35, 53.55, 7.25];
-const TILE = { lat: 0.5, lng: 0.65 };
-const PARTIAL = process.argv.includes('--partial');
-
-/**
- * Routes passing within STATION_RANGE_M of an NS station (stations carry their NS code in
- * `railway:ref`) in this tile. A route near stations in two tiles comes twice; we keep one.
- */
-const tileQuery = (s: number, w: number, n: number, e: number) => `
-[out:json][timeout:180];
-area["ISO3166-1"="NL"][admin_level=2]->.nl;
-nwr(area.nl)["railway"="station"]["railway:ref"](${s},${w},${n},${e})->.stations;
-rel(around.stations:${STATION_RANGE_M})[type=route][route~"^(hiking|foot)$"][network~"^(lwn|rwn|nwn)$"][name];
-out geom;`;
+/** Where the extract and its filtered copies live: next to the database. */
+const EXTRACT_DIR = join(dirname(process.env.DATABASE_PATH ?? 'data/treinwandelaar.db'), 'osm');
 
 const relationUrl = (id: number) => `https://www.openstreetmap.org/relation/${id}`;
 const slug = (s: string) =>
 	s
 		.toLowerCase()
 		.normalize('NFD')
-		.replace(/[̀-ͯ]/g, '')
+		.replace(/[\u0300-\u036f]/g, '')
 		.replace(/[^a-z0-9]+/g, '-')
 		.replace(/^-|-$/g, '');
 const twoDigits = (n: number) => String(n).padStart(2, '0');
@@ -73,26 +59,6 @@ const twoDigits = (n: number) => String(n).padStart(2, '0');
 function about(tags: Record<string, string>): string | null {
 	const parts = [tags.description, tags.operator && `Route van ${tags.operator}.`];
 	return parts.filter(Boolean).join(' ') || null;
-}
-
-async function loadRelations(): Promise<{ relations: OsmRelation[]; missing: number }> {
-	const relations = new Map<number, OsmRelation>();
-	let missing = 0;
-	for (let s = SOUTH; s < NORTH; s += TILE.lat)
-		for (let w = WEST; w < EAST; w += TILE.lng) {
-			const query = tileQuery(s, w, s + TILE.lat, w + TILE.lng);
-			const text = PARTIAL ? cachedOverpass(query) : await queryOverpass(query);
-			if (text === null) {
-				missing++;
-				process.stdout.write('_');
-				continue;
-			}
-			const { elements } = JSON.parse(text) as { elements: OsmRelation[] };
-			for (const el of elements) if (el.type === 'relation') relations.set(el.id, el);
-			process.stdout.write('.');
-		}
-	process.stdout.write('\n');
-	return { relations: [...relations.values()], missing };
 }
 
 /** The longest stitched line: stages are drawn as one line plus the odd stray bit. */
@@ -105,10 +71,9 @@ async function main() {
 	if (!stations.length) throw new Error('No stations; run `npm run ingest:stations` first.');
 	const stationName = (code: string) => stations.find((s) => s.code === code)?.name ?? code;
 
-	const { relations, missing } = await loadRelations();
+	const { relations, dataFrom } = await hikingRoutes(EXTRACT_DIR);
 	console.log(
-		`${relations.length} named walking routes in and around the Netherlands` +
-			(missing ? ` (${missing} tiles not downloaded yet)` : '')
+		`${relations.length} walking routes in the extract, data from ${dataFrom.toISOString()}`
 	);
 
 	const seen = new Set<string>();
@@ -264,9 +229,8 @@ async function main() {
 			});
 	}
 
-	recordFetched(db, 'osm', oldestFetch());
-	// A partial run doesn't know which walks are gone, only which it hasn't seen yet.
-	const pruned = missing ? 0 : pruneStale(db, ['law', 'streekpad', 'lokaal'], seen, 'osm');
+	recordFetched(db, 'osm', dataFrom);
+	const pruned = pruneStale(db, ['law', 'streekpad', 'lokaal'], seen, 'osm');
 	console.log(
 		`Stored ${seen.size} walks (${fromPaths} from ${paths.size} staged paths, ${loops} round walks, ` +
 			`${cut} other sections, ${duplicates} also in Wandelnet's data); skipped ${skipped} routes (NS walks, other networks)` +

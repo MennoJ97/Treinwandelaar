@@ -47,11 +47,12 @@ export function classify(rel: OsmRelation): Collection | null {
 }
 
 /**
- * "Marskramerpad - 14" → { path: 'Marskramerpad', stage: 14 }. LAW and streekpad stages are separate
- * relations named like this; local walks aren't staged.
+ * "Marskramerpad - 14" → { path: 'Marskramerpad', stage: 14 }, also with the stage's places after it
+ * ("Elfstedenpad - 01 - Leeuwarden-Mantgum"). LAW and streekpad stages are separate relations named
+ * like this; local walks aren't staged.
  */
 export function stageOf(name: string): { path: string; stage: number } | null {
-	const m = /^(.+?)\s+[-–]\s+(?:etappe\s+)?(\d+)[a-z]?$/i.exec(name.trim());
+	const m = /^(.+?)\s+[-–]\s+(?:etappe\s+)?(\d+)[a-z]?(?:\s*[-–:]\s+.+)?$/i.exec(name.trim());
 	return m ? { path: m[1].trim(), stage: Number(m[2]) } : null;
 }
 

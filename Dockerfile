@@ -8,6 +8,9 @@ RUN npm run build
 
 FROM node:24-slim
 WORKDIR /app
+# osmium filters the walking routes out of Geofabrik's OpenStreetMap extract (`npm run ingest:osm`).
+RUN apt-get update && apt-get install -y --no-install-recommends osmium-tool \
+    && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     DATABASE_PATH=/data/treinwandelaar.db \
     RAW_CACHE_DIR=/data/raw \

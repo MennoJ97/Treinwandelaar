@@ -26,8 +26,11 @@ Without `NS_API_KEY`, stations come from OpenStreetMap and the app works without
 | `ingest:gtfs`      | OVapi GTFS (gtfs.ovapi.nl/nl, ~250 MB, daily), rail only  | the timetable for offline travel times, two months ahead   |
 | `ingest:wandelnet` | wandelnet.nl/ns-wandelingen, route pages, review tab, GPX | route line, distance, start/end, description, star ratings |
 | `ingest:nsnl`      | ns.nl/dagje-uit/wandelen pages                            | photos, paved %, dogs policy                               |
+| `ingest:osm`       | Geofabrik's OSM extract of NL (~1.4 GB, weekly), osmium   | LAW, streekpad and local walks from OpenStreetMap          |
 
 Raw responses are cached in `data/raw` (re-download with `-- --refresh`), at most one request per second.
+`ingest:osm` needs [osmium](https://osmcode.org/osmium-tool/) (`brew install osmium-tool`, or
+`apt install osmium-tool`; the Docker image has it) and keeps the extract in `data/osm`.
 Route ends are matched to the nearest station within 1.5 km. Walks that end in a village without a station
 fall back to the nearest one within 12 km and are flagged as needing a bus. Fix mismatches in
 `scripts/ingest/overrides.json`.
@@ -79,15 +82,15 @@ or `demo`; with `full`, anonymous visitors would see everything.
 The code is MIT-licensed (see `LICENSE`). That covers the code only, not the data it fetches, and this
 repository contains none of it: the test fixtures are hand-written in the shape of the real pages.
 
-| Data                               | Owner                                              | Terms                                                                                                                                                                                |
-| ---------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Walks: routes, GPX, texts, ratings | [Wandelnet](https://www.wandelnet.nl)              | Copyright and database right; [terms](https://www.wandelnet.nl/algemene-voorwaarden) art. 9.3 allow strictly own use only                                                            |
-| Photos, paved %, dogs policy       | [NS](https://www.ns.nl)                            | Copyright of NS ([disclaimer](https://www.ns.nl/disclaimer)); not licensed for reuse                                                                                                 |
-| Stations, disruptions, trips       | [NS API](https://apiportal.ns.nl)                  | Your own key, under the [API conditions](https://apiportal.ns.nl/voorwaarden): only to inform travellers about future journeys, no NS logo, don't suggest NS checked the information |
-| Rail timetable (GTFS)              | [OVapi](https://gtfs.ovapi.nl) / Stichting OpenGeo | Free to use; don't claim to represent the transport operators                                                                                                                        |
-| Base map                           | [OpenFreeMap](https://openfreemap.org)             | © OpenMapTiles, © OpenStreetMap contributors (shown on the map)                                                                                                                      |
-| Stations without an NS key         | OpenStreetMap via Overpass                         | [ODbL](https://www.openstreetmap.org/copyright), © OpenStreetMap contributors                                                                                                        |
-| Demo walks: LAW, streekpad, local  | OpenStreetMap via Overpass                         | [ODbL](https://www.openstreetmap.org/copyright), © OpenStreetMap contributors; see below for why these routes may be in OSM at all                                                   |
+| Data                               | Owner                                                                                | Terms                                                                                                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Walks: routes, GPX, texts, ratings | [Wandelnet](https://www.wandelnet.nl)                                                | Copyright and database right; [terms](https://www.wandelnet.nl/algemene-voorwaarden) art. 9.3 allow strictly own use only                                                            |
+| Photos, paved %, dogs policy       | [NS](https://www.ns.nl)                                                              | Copyright of NS ([disclaimer](https://www.ns.nl/disclaimer)); not licensed for reuse                                                                                                 |
+| Stations, disruptions, trips       | [NS API](https://apiportal.ns.nl)                                                    | Your own key, under the [API conditions](https://apiportal.ns.nl/voorwaarden): only to inform travellers about future journeys, no NS logo, don't suggest NS checked the information |
+| Rail timetable (GTFS)              | [OVapi](https://gtfs.ovapi.nl) / Stichting OpenGeo                                   | Free to use; don't claim to represent the transport operators                                                                                                                        |
+| Base map                           | [OpenFreeMap](https://openfreemap.org)                                               | © OpenMapTiles, © OpenStreetMap contributors (shown on the map)                                                                                                                      |
+| Stations without an NS key         | OpenStreetMap via Overpass                                                           | [ODbL](https://www.openstreetmap.org/copyright), © OpenStreetMap contributors                                                                                                        |
+| Demo walks: LAW, streekpad, local  | OpenStreetMap via [Geofabrik](https://download.geofabrik.de/europe/netherlands.html) | [ODbL](https://www.openstreetmap.org/copyright), © OpenStreetMap contributors; see below for why these routes may be in OSM at all                                                   |
 
 So: run your own copy for yourself, behind authentication, and don't publish the database, GPX files or photos.
 
