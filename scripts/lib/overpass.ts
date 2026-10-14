@@ -35,12 +35,21 @@ export async function queryOverpass(query: string): Promise<string> {
 	const cached = process.argv.includes('--refresh') ? null : cachedOverpass(query);
 	if (cached !== null) return cached;
 	const errors: string[] = [];
-	for (const endpoint of ENDPOINTS) {
-		try {
-			return await fetchCached(endpoint, request(query), complete);
-		} catch (err) {
-			errors.push((err as Error).message.slice(0, 120));
+	for (let round = 1; round <= ROUNDS; round++) {
+		for (const endpoint of ENDPOINTS) {
+			try {
+				return await fetchCached(endpoint, request(query), complete);
+			} catch (err) {
+				errors.push((err as Error).message.slice(0, 120));
+			}
 		}
+		// All busy (504/429 under load): give them a while before the next round.
+		if (round < ROUNDS) await new Promise((r) => setTimeout(r, round * 60_000));
 	}
-	throw new Error(`All Overpass servers failed:\n  ${errors.join('\n  ')}`);
+	throw new Error(
+		`All Overpass servers failed:\n  ${errors.slice(-ENDPOINTS.length).join('\n  ')}`
+	);
 }
+
+/** Rounds over all servers before giving up; with the waits in between that is about 15 minutes. */
+const ROUNDS = 5;
