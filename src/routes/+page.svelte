@@ -218,6 +218,7 @@
 			{selectedId}
 			credit={mapCredit}
 			onselect={select}
+			onlocate={(code) => (home = code)}
 		/>
 		<MapLegend
 			homeName={homeStation?.name ?? ''}

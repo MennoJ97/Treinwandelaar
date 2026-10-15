@@ -7,6 +7,7 @@
 		Map as MlMap
 	} from 'maplibre-gl';
 	import type { Reachability, Station, WalkSummary } from '#lib/types.js';
+	import { nearest } from '#lib/geo.js';
 	import { travelBand } from '#lib/itinerary.js';
 	import { endLabel, startLabel } from '#lib/walk.js';
 	// MapLibre 6 looks for its worker next to its own module. In a production build that module is
@@ -22,9 +23,24 @@
 		/** Source line for the routes, next to the map data's own attribution. */
 		credit: string;
 		onselect: (id: string | null) => void;
+		/** You asked the map where you are: here's the station closest to you. */
+		onlocate: (code: string) => void;
 	}
 
-	let { walks, stations, home, reachability, selectedId, credit, onselect }: Props = $props();
+	let { walks, stations, home, reachability, selectedId, credit, onselect, onlocate }: Props =
+		$props();
+
+	/** Further than this from any Dutch station (abroad, say) and we leave the home station alone. */
+	const LOCATE_MAX_METRES = 50_000;
+
+	/** MapLibre's control labels, in Dutch like the rest of the page. */
+	const LOCALE = {
+		'GeolocateControl.FindMyLocation': 'Vind mijn locatie en dichtstbijzijnde station',
+		'GeolocateControl.LocationNotAvailable': 'Locatie niet beschikbaar',
+		'NavigationControl.ResetBearing': 'Draai de kaart terug naar het noorden',
+		'NavigationControl.ZoomIn': 'Inzoomen',
+		'NavigationControl.ZoomOut': 'Uitzoomen'
+	};
 
 	let container: HTMLDivElement;
 	let map: MlMap | undefined = $state();
@@ -339,9 +355,29 @@
 				style: styleUrl(),
 				bounds: NL_BOUNDS,
 				fitBoundsOptions: { padding: panelPadding(20) },
-				attributionControl: { compact: true, customAttribution: credit }
+				attributionControl: { compact: true, customAttribution: credit },
+				locale: LOCALE
 			});
-			m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+			// The compass sits under the zoom buttons; it turns with the map and a click puts north
+			// back up (and the map flat again, after a two-finger tilt).
+			m.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+			const geolocate = new maplibregl.GeolocateControl({});
+			m.addControl(geolocate, 'top-right');
+			geolocate.on('geolocate', ({ coords }) => {
+				const here: [number, number] = [coords.longitude, coords.latitude];
+				const closest = nearest(here, stations, LOCATE_MAX_METRES);
+				if (!closest) return; // the control has already flown to you; nothing to pick
+				onlocate(closest.item.code);
+				// Frame you and the station together, in place of the control's own fly-to-you.
+				const station: [number, number] = [closest.item.lng, closest.item.lat];
+				m.fitBounds(
+					[
+						[Math.min(here[0], station[0]), Math.min(here[1], station[1])],
+						[Math.max(here[0], station[0]), Math.max(here[1], station[1])]
+					],
+					{ padding: panelPadding(56, true), maxZoom: 13, duration: 800 }
+				);
+			});
 			m.on('load', () => {
 				addOverlay(m);
 				// Layer-bound listeners belong to the map, so they survive a style swap.

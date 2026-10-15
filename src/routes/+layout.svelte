@@ -106,14 +106,16 @@
 		border-top-color: var(--line) !important;
 	}
 
+	/* Light glyphs on the dark surface. The hue-rotate undoes invert's colour flip, so the locate
+	   button's blue "found you" state stays blue rather than turning orange. */
 	@media (prefers-color-scheme: dark) {
 		:global(:root:not([data-theme='light']) .maplibregl-ctrl button .maplibregl-ctrl-icon) {
-			filter: invert(1);
+			filter: invert(1) hue-rotate(180deg);
 		}
 	}
 
 	:global(:root[data-theme='dark'] .maplibregl-ctrl button .maplibregl-ctrl-icon) {
-		filter: invert(1);
+		filter: invert(1) hue-rotate(180deg);
 	}
 
 	:global(*, *::before, *::after) {
