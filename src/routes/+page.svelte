@@ -190,6 +190,29 @@
 		return list.sort(by[sort]);
 	});
 
+	// --- The list grows as you scroll: a thousand rows at once make the first paint slow -----------
+	const PAGE_SIZE = 50;
+	let listed = $state(PAGE_SIZE);
+	const listedWalks = $derived(visible.slice(0, listed));
+
+	// A new filter, sort, home or day is a new list: start again from its top.
+	$effect(() => {
+		void visible;
+		listed = PAGE_SIZE;
+	});
+
+	/** The "toon meer" button loads the next page by itself once you scroll near it. */
+	function loadWhenNear(button: HTMLButtonElement) {
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((e) => e.isIntersecting)) listed += PAGE_SIZE;
+			},
+			{ rootMargin: '600px 0px' }
+		);
+		observer.observe(button);
+		return () => observer.disconnect();
+	}
+
 	// --- Selection lives in the URL so reloads and links keep it ------------------------------------
 	const selectedId = $derived(page.url.searchParams.get('walk'));
 	let panel: HTMLElement;
@@ -270,7 +293,7 @@
 			{#if data.demo}
 				<p class="demo">
 					Demo met LAW-routes, streekpaden en lokale wandelingen uit OpenStreetMap.
-					<a href="/login" data-sveltekit-reload>Inloggen</a> voor de NS-wandelingen en om bij te houden
+					<a href="/login" data-sveltekit-reload>Inloggen</a> voor meer wandelingen en om bij te houden
 					wat je wilt lopen.
 				</p>
 			{/if}
@@ -372,7 +395,7 @@
 
 			{#if visible.length}
 				<ul class="walks">
-					{#each visible as w (w.id)}
+					{#each listedWalks as w (w.id)}
 						{@const t = minutesTo(w)}
 						{@const hits = walkDisruptions(w)}
 						{@const b = minutesBack(w)}
@@ -404,6 +427,20 @@
 						</li>
 					{/each}
 				</ul>
+				{#if listed < visible.length}
+					<!-- Keyed on the count, so the observer starts afresh after each page: if the button is
+					     still in reach, it loads the next one too. -->
+					{#key listed}
+						<button
+							type="button"
+							class="more"
+							onclick={() => (listed += PAGE_SIZE)}
+							{@attach loadWhenNear}
+						>
+							Toon meer ({visible.length - listed})
+						</button>
+					{/key}
+				{/if}
 			{:else}
 				<p class="hint">Geen wandelingen binnen deze filters. Verruim de reistijd of afstand.</p>
 			{/if}
@@ -803,6 +840,18 @@
 		border-left: 3px solid var(--signal);
 		font-size: var(--step--1);
 	}
+	.more {
+		display: block;
+		margin: 12px auto 0;
+		padding: 6px 14px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--ink);
+		font-size: var(--step--1);
+		cursor: pointer;
+	}
+
 	.credits {
 		margin: 12px 20px 20px;
 		color: var(--muted);
