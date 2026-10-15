@@ -252,8 +252,27 @@
 				>/</span
 			><a class="here" href="/"><Mark />treinwandelaar</a>
 		</h1>
-		<button class="theme-toggle" aria-label="Donkere modus" hidden></button>
+		<div class="bar-actions">
+			<button type="button" class="sources-toggle" popovertarget="sources">Bronnen</button>
+			<button class="theme-toggle" aria-label="Donkere modus" hidden></button>
+		</div>
 	</header>
+	<!-- Who the routes come from, one tap away from anywhere instead of below the whole list. -->
+	<div id="sources" class="sources" popover>
+		<p>
+			{#if data.demo}
+				{osmCredit(data.osmUpdated)}: routes van Wandelnet en andere beheerders, ingetekend door
+				vrijwilligers.
+				<a href="/api/osm-walks.geojson" data-sveltekit-reload>Download (ODbL)</a>.
+			{:else}
+				{wandelnetCredit(data.wandelnetUpdated)}; foto's en praktische info van NS. Iets mis op een
+				route?
+				<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Meld het bij Wandelnet</a>.
+				Alleen voor persoonlijk gebruik.
+				{#if hasOsm}Andere routes © OpenStreetMap-bijdragers (ODbL).{/if}
+			{/if}
+		</p>
+	</div>
 
 	<div class="map-area">
 		<WalkMap
@@ -444,20 +463,6 @@
 			{:else}
 				<p class="hint">Geen wandelingen binnen deze filters. Verruim de reistijd of afstand.</p>
 			{/if}
-
-			<p class="credits">
-				{#if data.demo}
-					{osmCredit(data.osmUpdated)}: routes van Wandelnet en andere beheerders, ingetekend door
-					vrijwilligers.
-					<a href="/api/osm-walks.geojson" data-sveltekit-reload>Download (ODbL)</a>.
-				{:else}
-					{wandelnetCredit(data.wandelnetUpdated)}; foto's en praktische info van NS. Iets mis op
-					een route?
-					<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Meld het bij Wandelnet</a>.
-					Alleen voor persoonlijk gebruik.
-					{#if hasOsm}Andere routes © OpenStreetMap-bijdragers (ODbL).{/if}
-				{/if}
-			</p>
 		{/if}
 	</aside>
 </div>
@@ -852,9 +857,40 @@
 		cursor: pointer;
 	}
 
-	.credits {
-		margin: 12px 20px 20px;
+	.bar-actions {
+		display: flex;
+		flex: none;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.sources-toggle {
+		padding: 0;
+		border: 0;
+		background: none;
 		color: var(--muted);
+		font: inherit;
 		font-size: var(--step--1);
+		cursor: pointer;
+	}
+	.sources-toggle:hover {
+		color: var(--ink);
+	}
+
+	/* Just under the bar, as wide as the panel. */
+	.sources {
+		inset: 68px auto auto 12px;
+		width: min(var(--panel-width, 380px), calc(100vw - 24px));
+		margin: 0;
+		padding: 12px 16px;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--surface);
+		color: var(--ink);
+		font-size: var(--step--1);
+		box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+	}
+	.sources p {
+		margin: 0;
 	}
 </style>
