@@ -51,19 +51,42 @@
 
 	const homeStation = $derived(data.stations.find((s) => s.code === home) ?? data.stations[0]);
 
-	// --- Travel day: next week, defaulting to the coming Saturday -----------------------------------
+	// --- Travel day: as far ahead as the timetable goes, defaulting to the coming Saturday ----------
 	let day = $state(nextSaturdayMorning().slice(0, 10));
-	const dayOptions = Array.from({ length: 8 }, (_, i) => {
-		const date = new Date(Date.now() + i * 24 * 3600_000);
-		const ymd = amsterdamYmd(date);
-		const label = date.toLocaleDateString('nl-NL', {
+	const today = amsterdamYmd();
+	const tomorrow = amsterdamYmd(new Date(Date.now() + 24 * 3600_000));
+	// Without a timetable every day costs a round of NS planner calls; keep to the coming week then.
+	const lastDay = $derived(data.lastDay ?? amsterdamYmd(new Date(Date.now() + 7 * 24 * 3600_000)));
+
+	/** "za 17 okt", or "vandaag, do 15 okt" and "morgen, …" for the next two days. */
+	function dayLabel(ymd: string) {
+		// Noon UTC is the same date in Amsterdam, whatever the season.
+		const label = new Date(`${ymd}T12:00:00Z`).toLocaleDateString('nl-NL', {
 			weekday: 'short',
 			day: 'numeric',
 			month: 'short',
 			timeZone: 'Europe/Amsterdam'
 		});
-		return { ymd, label: i === 0 ? `vandaag, ${label}` : i === 1 ? `morgen, ${label}` : label };
-	});
+		return ymd === today ? `vandaag, ${label}` : ymd === tomorrow ? `morgen, ${label}` : label;
+	}
+
+	/** The date field shows no weekday, and the weekday is what you pick a walking day by. */
+	const weekday = (ymd: string) =>
+		ymd === today
+			? 'vandaag'
+			: ymd === tomorrow
+				? 'morgen'
+				: new Date(`${ymd}T12:00:00Z`).toLocaleDateString('nl-NL', {
+						weekday: 'long',
+						timeZone: 'Europe/Amsterdam'
+					});
+
+	/** A cleared field or a typed date outside the timetable keeps the day you had. */
+	function pickDay(e: Event & { currentTarget: HTMLInputElement }) {
+		const ymd = e.currentTarget.value;
+		if (ymd && ymd >= today && ymd <= lastDay) day = ymd;
+		else e.currentTarget.value = day;
+	}
 
 	// --- Travel times from home, and disruptions on the way ----------------------------------------
 	let reachability = $state<Reachability>({});
@@ -222,7 +245,7 @@
 		/>
 		<MapLegend
 			homeName={homeStation?.name ?? ''}
-			dayLabel={dayOptions.find((o) => o.ymd === day)?.label ?? day}
+			dayLabel={dayLabel(day)}
 			loading={reachStatus === 'loading'}
 		/>
 	</div>
@@ -259,7 +282,7 @@
 				aria-controls="filters"
 				onclick={() => (filtersOpen = !filtersOpen)}
 			>
-				<span>{dayOptions.find((o) => o.ymd === day)?.label ?? day}</span>
+				<span>{dayLabel(day)}</span>
 				<span class="toggle-label"
 					>Filters{#if activeFilters}<span class="badge tabular">{activeFilters}</span>{/if}</span
 				>
@@ -268,9 +291,16 @@
 			<div class="filters" id="filters" class:open={filtersOpen}>
 				<label>
 					<span>Reisdag</span>
-					<select class="day" bind:value={day}>
-						{#each dayOptions as o (o.ymd)}<option value={o.ymd}>{o.label}</option>{/each}
-					</select>
+					<input
+						type="date"
+						class="day"
+						value={day}
+						min={today}
+						max={lastDay}
+						required
+						onchange={pickDay}
+					/>
+					<output>{weekday(day)}</output>
 				</label>
 				<label>
 					<span>Max. reistijd heen</span>
@@ -647,7 +677,7 @@
 		gap: 4px 16px;
 	}
 
-	.filters select.day,
+	.filters input.day,
 	.sort select {
 		grid-column: 2 / 4;
 		min-width: 0;
@@ -655,6 +685,13 @@
 		border: 1px solid var(--line);
 		border-radius: var(--radius);
 		background: var(--surface);
+	}
+
+	/* The date takes the middle column; its weekday goes where the sliders show their value. */
+	.filters input.day {
+		grid-column: 2;
+		color: var(--ink);
+		font: inherit;
 	}
 
 	.count,

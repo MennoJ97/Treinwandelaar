@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { buildDay, fastestRoutes, fastestRoutesHome, TRANSFER_SECONDS } from './railRouter';
+import { DatabaseSync } from 'node:sqlite';
+import { initSchema } from './db';
+import {
+	buildDay,
+	fastestRoutes,
+	fastestRoutesHome,
+	timetableLastDay,
+	TRANSFER_SECONDS
+} from './railRouter';
 
 const t = (hm: string) => {
 	const [h, m] = hm.split(':').map(Number);
@@ -122,5 +130,23 @@ describe('rail router (connection scan)', () => {
 			['D', 'B'],
 			['B', 'A']
 		]);
+	});
+});
+
+describe('timetableLastDay', () => {
+	it('is the last service date, as YYYY-MM-DD', () => {
+		const db = new DatabaseSync(':memory:');
+		initSchema(db);
+		const add = db.prepare('insert into gtfs_service_date (service_id, date) values (?, ?)');
+		add.run('a', '20261013');
+		add.run('a', '20261212');
+		add.run('b', '20261101');
+		expect(timetableLastDay(db)).toBe('2026-12-12');
+	});
+
+	it('is null without a timetable', () => {
+		const db = new DatabaseSync(':memory:');
+		initSchema(db);
+		expect(timetableLastDay(db)).toBeNull();
 	});
 });

@@ -314,6 +314,13 @@ export function fastestRoutesHome(
 
 const cache = new Map<string, Day>();
 
+/** The last date (YYYY-MM-DD) the loaded timetable covers, or null when none is loaded. */
+export function timetableLastDay(db: DatabaseSync): string | null {
+	const row = db.prepare(`select max(date) as date from gtfs_service_date`).get() as
+		{ date: string | null } | undefined;
+	return row?.date ? `${row.date.slice(0, 4)}-${row.date.slice(4, 6)}-${row.date.slice(6)}` : null;
+}
+
 /** The timetable for one date (YYYY-MM-DD), or null when the feed doesn't cover it. */
 export function loadDay(db: DatabaseSync, ymd: string): Day | null {
 	const feed = (
