@@ -59,7 +59,7 @@
 	function panelPadding(base: number, legend = false) {
 		const wide = window.matchMedia('(min-width: 800px)').matches;
 		if (!wide) return { top: base, right: base, left: base, bottom: base + (legend ? 40 : 0) };
-		return { top: base, right: base, left: 412 + base, bottom: base + (legend ? 110 : 0) };
+		return { top: base, right: base, left: 412 + base, bottom: base + (legend ? 124 : 0) };
 	}
 
 	function cssVar(name: string) {
@@ -358,6 +358,11 @@
 				attributionControl: { compact: true, customAttribution: credit },
 				locale: LOCALE
 			});
+			// MapLibre opens the compact attribution at first and folds it on your first drag. Start
+			// folded, so it doesn't lie over the routes and the legend; the (i) button opens it.
+			const attribution = container.querySelector('.maplibregl-ctrl-attrib');
+			attribution?.classList.remove('maplibregl-compact-show');
+			attribution?.removeAttribute('open');
 			// The compass sits under the zoom buttons; it turns with the map and a click puts north
 			// back up (and the map flat again, after a two-finger tilt).
 			m.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');

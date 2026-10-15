@@ -44,7 +44,7 @@
 		position: absolute;
 		z-index: 2;
 		right: 10px;
-		bottom: 30px; /* clear of the attribution */
+		bottom: 44px; /* stacked above the attribution's (i) button, 10px apart like the zoom controls */
 		width: 236px;
 		margin: 0;
 		padding: 9px 11px 8px;

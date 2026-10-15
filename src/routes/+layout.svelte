@@ -102,6 +102,11 @@
 		color: var(--muted) !important;
 	}
 
+	/* Opened, the attribution is a popover over the legend, which otherwise sits just above it. */
+	:global(.maplibregl-ctrl-bottom-right:has(.maplibregl-compact-show)) {
+		z-index: 3;
+	}
+
 	:global(.maplibregl-ctrl-group button + button) {
 		border-top-color: var(--line) !important;
 	}
