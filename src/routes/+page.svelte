@@ -249,6 +249,10 @@
 		details[id] ?? (data.selected?.id === id ? data.selected : undefined);
 	const selected = $derived((selectedId && detail(selectedId)) || null);
 
+	// The planner's date and time, kept from walk to walk. Stamped with the list's day: pick another
+	// travel day there and the planner starts over from it.
+	let trip = $state<{ date: string; time: string; day: string } | null>(null);
+
 	async function fetchWalk(id: string, signal: AbortSignal): Promise<WalkDetailData> {
 		const r = await fetch(`/api/walks/${encodeURIComponent(id)}`, { signal });
 		if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -373,6 +377,8 @@
 					hasNsKey={data.hasNsKey}
 					demo={data.demo}
 					{day}
+					trip={trip?.day === day ? trip : null}
+					ontrip={(t) => (trip = { ...t, day })}
 					disruptions={walkDisruptions(selected)}
 					onclose={() => select(null)}
 					{onsaved}
