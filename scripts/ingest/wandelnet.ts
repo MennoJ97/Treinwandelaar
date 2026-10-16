@@ -7,7 +7,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { openDb } from '../../src/lib/server/db';
 import { haversine, lineLengthKm, nearest, type LngLat } from '../../src/lib/geo';
-import type { Collection, Station } from '../../src/lib/types';
+import { WALKABLE_STATION_M, type Collection, type Station } from '../../src/lib/types';
 import { fetchCached, oldestFetch } from '../lib/http';
 import { pruneStale, recordFetched, saveWalk } from '../lib/store';
 import { WANDELNET, parseGpx, parseList, parseReviews, parseRoutePage } from '../lib/wandelnet';
@@ -17,9 +17,12 @@ const COLLECTIONS: { path: string; collection: Collection }[] = [
 	{ path: '/ov-stappers', collection: 'ov-stapper' }
 ];
 
-const MAX_STATION_DISTANCE_M = 1500;
+/** Within walking distance; the planner shows the walk to/from the route. */
+const MAX_STATION_DISTANCE_M = WALKABLE_STATION_M;
 /** Some walks end in a village without a station (e.g. Wageningen); fall back to the nearest one. */
 const FALLBACK_STATION_DISTANCE_M = 12_000;
+/** Start and end this close together: the route itself is a loop. */
+const LOOP_M = 1500;
 const OVERRIDES_FILE = 'scripts/ingest/overrides.json';
 
 type Overrides = Record<string, { startStation?: string; endStation?: string; skip?: boolean }>;
@@ -39,9 +42,13 @@ function matchStation(
 				how: `${Math.round(hit.metres)} m`
 			};
 	}
-	// The published place name ("Culemborg" → station "Culemborg").
+	// The published place name ("Culemborg" → station "Culemborg"). Keep the distance: the route can
+	// start well outside the town's station (Hollandse Biesbosch: "Dordrecht", 3.6 km from it).
 	const byName = place && stations.find((s) => s.name.toLowerCase() === place.toLowerCase());
-	if (byName) return { code: byName.code, metres: null, how: 'name' };
+	if (byName) {
+		const metres = point ? Math.round(haversine(point, [byName.lng, byName.lat])) : null;
+		return { code: byName.code, metres, how: `name, ${metres ?? '?'} m` };
+	}
 	if (point) {
 		const far = nearest(point, stations, FALLBACK_STATION_DISTANCE_M);
 		if (far)
@@ -144,7 +151,7 @@ async function main() {
 					endStationM: end?.metres ?? null,
 					// A loop if the route itself returns to its start, not merely shares a station with it
 					// (bus-leg walks can start and end at the same station without being a loop).
-					isLoop: haversine(track[0], track.at(-1)!) < MAX_STATION_DISTANCE_M,
+					isLoop: haversine(track[0], track.at(-1)!) < LOOP_M,
 					distanceKm,
 					statedDistanceKm: stated,
 					description: page.description,

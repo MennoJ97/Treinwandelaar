@@ -36,7 +36,7 @@ create table if not exists walks (
 	end_place text,
 	start_station text references stations(code),
 	end_station text references stations(code),
-	start_station_m integer,          -- distance route start ↔ station; > 1500 means a bus/taxi leg
+	start_station_m integer,          -- distance route start ↔ station; > 2000 means a bus/taxi leg
 	end_station_m integer,
 	is_loop integer not null default 0,
 	distance_km real not null,        -- measured from the GPX
@@ -88,6 +88,30 @@ create table if not exists gtfs_stop_time (
 	dep integer not null,
 	primary key (trip_id, seq)
 ) without rowid;
+
+-- Buses (and trams, metros) between a route end too far to walk and its station, from the same GTFS
+-- feed: only the trips that run between stops near the two. One row per trip and walk end.
+create table if not exists feeder_trip (
+	walk_id text not null,
+	side text not null,               -- 'start': station → route start; 'end': route end → station
+	trip_id integer not null,
+	service_id text not null,
+	line text not null,               -- "Bus 136"
+	operator text,                    -- "Arriva"
+	headsign text,
+	board text not null,              -- stop names
+	alight text not null,
+	dep integer not null,             -- seconds after midnight of the service day
+	arr integer not null,
+	stop_m integer not null,          -- the walk between the stop and the route end, straight line
+	primary key (walk_id, side, trip_id)
+) without rowid;
+
+create table if not exists feeder_service_date (
+	service_id text not null,
+	date text not null,               -- YYYYMMDD
+	primary key (date, service_id)
+);
 
 create table if not exists meta (
 	key text primary key,

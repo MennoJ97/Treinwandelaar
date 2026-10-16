@@ -36,7 +36,7 @@ export interface WalkSummary {
 	endStationName: string | null;
 	startPlace: string | null;
 	endPlace: string | null;
-	/** Metres between route start/end and the station; above ~1500 a bus leg is needed. */
+	/** Metres (straight line) between route start/end and the station; above 2000 a bus leg is needed. */
 	startStationM: number | null;
 	endStationM: number | null;
 	isLoop: boolean;
@@ -126,5 +126,35 @@ export interface ReachabilityResponse {
 	incomplete: boolean;
 }
 
-/** Walks further than this from a station need a bus/taxi leg. */
-export const WALKABLE_STATION_M = 1500;
+/**
+ * Route ends further than this (straight line) from their station need a bus/taxi leg; closer ones are
+ * walked, about 2.5 km on the ground.
+ */
+export const WALKABLE_STATION_M = 2000;
+
+/** Route ends closer than this to the station count as starting at it: no separate walk to show. */
+export const AT_STATION_M = 300;
+
+/** A bus (tram, metro, ferry) between the station and a route end too far to walk. */
+export interface FeederRide {
+	/** "Bus 136", "Metro B". */
+	line: string;
+	operator: string | null;
+	headsign: string | null;
+	/** Stop names. */
+	from: string;
+	to: string;
+	departure: string;
+	arrival: string;
+	/** Straight-line metres between the stop and the route end. */
+	stopM: number;
+}
+
+/**
+ * A day's feeder rides for one walk, per route end. Null: no direct ride known (no bus, or the end is
+ * walkable); empty: none that day.
+ */
+export interface Feeders {
+	start: FeederRide[] | null;
+	end: FeederRide[] | null;
+}

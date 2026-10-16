@@ -12,7 +12,7 @@ locally or behind authentication; don't host it publicly.
 ```bash
 npm install
 cp .env.example .env      # add NS_API_KEY for train times (free: apiportal.ns.nl, product "Ns-App")
-npm run ingest            # stations → Wandelnet walks → ns.nl enrichment, into data/treinwandelaar.db
+npm run ingest            # stations → walks → ns.nl enrichment → timetable, into data/treinwandelaar.db
 npm run dev
 ```
 
@@ -20,19 +20,22 @@ Without `NS_API_KEY`, stations come from OpenStreetMap and the app works without
 
 ## Data pipeline
 
-| Step               | Source                                                    | Gives                                                      |
-| ------------------ | --------------------------------------------------------- | ---------------------------------------------------------- |
-| `ingest:stations`  | NS Stations API, or OSM Overpass as fallback              | ~400 NL stations with NS codes                             |
-| `ingest:gtfs`      | OVapi GTFS (gtfs.ovapi.nl/nl, ~250 MB, daily), rail only  | the timetable for offline travel times, two months ahead   |
-| `ingest:wandelnet` | wandelnet.nl/ns-wandelingen, route pages, review tab, GPX | route line, distance, start/end, description, star ratings |
-| `ingest:nsnl`      | ns.nl/dagje-uit/wandelen pages                            | photos, paved %, dogs policy                               |
-| `ingest:osm`       | Geofabrik's OSM extract of NL (~1.4 GB, weekly), osmium   | LAW, streekpad and local walks from OpenStreetMap          |
+| Step               | Source                                                    | Gives                                                         |
+| ------------------ | --------------------------------------------------------- | ------------------------------------------------------------- |
+| `ingest:stations`  | NS Stations API, or OSM Overpass as fallback              | ~400 NL stations with NS codes                                |
+| `ingest:gtfs`      | OVapi GTFS (gtfs.ovapi.nl/nl, ~250 MB, daily)             | rail timetable two months ahead, plus buses to far route ends |
+| `ingest:wandelnet` | wandelnet.nl/ns-wandelingen, route pages, review tab, GPX | route line, distance, start/end, description, star ratings    |
+| `ingest:nsnl`      | ns.nl/dagje-uit/wandelen pages                            | photos, paved %, dogs policy                                  |
+| `ingest:osm`       | Geofabrik's OSM extract of NL (~1.4 GB, weekly), osmium   | LAW, streekpad and local walks from OpenStreetMap             |
 
 Raw responses are cached in `data/raw` (re-download with `-- --refresh`), at most one request per second.
 `ingest:osm` needs [osmium](https://osmcode.org/osmium-tool/) (`brew install osmium-tool`, or
 `apt install osmium-tool`; the Docker image has it) and keeps the extract in `data/osm`.
-Route ends are matched to the nearest station within 1.5 km. Walks that end in a village without a station
-fall back to the nearest one within 12 km and are flagged as needing a bus. Fix mismatches in
+Route ends are matched to the nearest station within 2 km; the planner shows that stretch as a walk (straight
+line plus 30%). Walks that end in a village without a station fall back to the nearest one within 12 km and
+need a bus: `ingest:gtfs` then also keeps the buses, trams and metros that run between stops near that route
+end and near the station, so the planner can pick a real departure (it falls back to an estimate where there
+is no direct line). That depends on the walks, so `npm run ingest` runs it last. Fix mismatches in
 `scripts/ingest/overrides.json`.
 
 Travel times on the map come from that timetable (a connection-scan planner, a few ms per home
