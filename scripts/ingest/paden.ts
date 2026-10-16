@@ -10,7 +10,7 @@
  */
 import { openDb } from '../../src/lib/server/db';
 import type { Collection, Station } from '../../src/lib/types';
-import { fetchCached, oldestFetch } from '../lib/http';
+import { fetchCached, fetchList, oldestFetch } from '../lib/http';
 import { chainStages, pickSections, sectionKm, stationHits } from '../lib/sections';
 import { pruneStale, recordFetched, saveWalk } from '../lib/store';
 import {
@@ -90,14 +90,14 @@ async function main() {
 	const problems: string[] = [];
 
 	for (const { path, collection } of OVERVIEWS) {
-		const slugs = pathSlugs(await fetchCached(`${WANDELNET}${path}`));
+		const slugs = pathSlugs(await fetchList(`${WANDELNET}${path}`));
 		console.log(`\n${path}: ${slugs.length} candidate pages`);
 
 		for (const slug of slugs) {
 			const pathUrl = `${WANDELNET}/${slug}`;
 			let html: string;
 			try {
-				html = await fetchCached(pathUrl);
+				html = await fetchList(pathUrl);
 			} catch (err) {
 				problems.push(`${slug}: ${(err as Error).message}`);
 				continue;

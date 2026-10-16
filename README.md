@@ -51,9 +51,13 @@ docker compose run --rm ingest   # first fill
 ```
 
 The timetable needs nothing more: run `ingest:gtfs` daily (it only downloads when OVapi has a newer feed). For the
-walks, `npm run ingest:weekly` downloads Wandelnet afresh (`--refresh`; a page that fails to download keeps its
-cached copy, so a hiccup doesn't delist a walk), refreshes the OSM extract and rebuilds the feeder buses. From
-cron, e.g. Mondays at 04:00 (`ingest` has a compose profile, so `up --build` doesn't rebuild it):
+walks, `npm run ingest:weekly` is light: it downloads only the overview pages afresh (`--refresh-lists`), so new
+walks come in and delisted ones go while known walks' pages stay cached. On the first Monday of each quarter, or with
+`-- --full`, it downloads every Wandelnet page again (`--refresh`) to pick up edited routes; a page that fails to
+download then keeps its cached copy, so a hiccup doesn't delist a walk. Wandelnet's terms allow copying only for your
+own use, and database law frowns on repeated wholesale extraction, hence the light default. It also refreshes the OSM
+extract and rebuilds the feeder buses. From cron, e.g. Mondays at 04:00 (`ingest` has a compose profile, so
+`up --build` doesn't rebuild it):
 
 ```cron
 0 4 * * 1 cd /path/to/stack && { docker compose --profile ingest build -q ingest && docker compose run -T --rm ingest npm run ingest:weekly; } > /path/to/data/ingest-weekly.log 2>&1
