@@ -4,5 +4,8 @@
 	"wandelnet:124": { "endStation": "AMR" },
 	"wandelnet:1084": { "startStation": "VL" },
 	"wandelnet:119": { "endStation": "GVC" },
-	"wandelnet:1329": { "endStation": "MDB" }
+	"wandelnet:1329": { "endStation": "MDB" },
+	"wandelnet:105": { "endStation": "HRN" },
+	"wandelnet:756": { "startStation": "HN" },
+	"wandelnet:887": { "startStation": "VK" }
 }

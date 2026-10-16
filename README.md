@@ -35,8 +35,9 @@ Route ends are matched to the nearest station within 2 km; the planner shows tha
 line plus 30%). Walks that end in a village without a station fall back to the nearest one within 12 km and
 need a bus: `ingest:gtfs` then also keeps the buses, trams and metros that run between stops near that route
 end and near the station, so the planner can pick a real departure (it falls back to an estimate where there
-is no direct line). That depends on the walks, so `npm run ingest` runs it last. Fix mismatches in
-`scripts/ingest/overrides.json`.
+is no direct line). That depends on the walks, so `npm run ingest` runs it last. For an end with no direct
+line to its station it logs the stations a line from there does reach, by typical ride: point the walk at
+one of those, and fix other mismatches, in `scripts/ingest/overrides.json`.
 
 Travel times on the map come from that timetable (a connection-scan planner, a few ms per home
 station), and NS's disruptions API flags walks whose route runs along works or a disruption on the

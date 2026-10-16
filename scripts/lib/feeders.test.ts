@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { feederRide, lineName, stopsNear, type StopTime } from './feeders';
+import {
+	feederRide,
+	lineName,
+	stationStops,
+	stationsReached,
+	stopsNear,
+	type StopTime
+} from './feeders';
 
 const at = (stopId: string, seq: number, min: number, extra: Partial<StopTime> = {}): StopTime => ({
 	stopId,
@@ -51,7 +58,40 @@ describe('feederRide', () => {
 	});
 });
 
-describe('stopsNear and lineName', () => {
+describe('stationsReached', () => {
+	// Den Bosch's bus stops, and one in Vlijmen that is near a (made-up) station of its own.
+	const stationOf = new Map([
+		['den-bosch-west', 'HT'],
+		['den-bosch-busstation', 'HT'],
+		['vlijmen', 'VLM']
+	]);
+
+	it('lists every station the trip runs to, with the shortest ride', () => {
+		const reached = stationsReached(trip, 'end', route, stationOf);
+		expect(Object.fromEntries(reached)).toEqual({ VLM: 8 * 60, HT: 18 * 60 });
+	});
+
+	it('runs from the station for a route start', () => {
+		const back = trip.map((s, i) => ({ ...s, seq: trip.length - i }));
+		expect(stationsReached(trip, 'start', route, stationOf).size).toBe(0);
+		// Reversed, minutes stay as they were, so measure only which stations it finds.
+		expect([...stationsReached(back, 'start', route, stationOf).keys()].sort()).toEqual([
+			'HT',
+			'VLM'
+		]);
+	});
+});
+
+describe('stopsNear, stationStops and lineName', () => {
+	it('gives each stop near a station to the closest one', () => {
+		const stops = [{ id: 'a', name: 'A', at: [5.13, 51.68] as [number, number] }];
+		const stations = [
+			{ code: 'FAR', at: [5.135, 51.68] as [number, number] },
+			{ code: 'NEAR', at: [5.131, 51.68] as [number, number] }
+		];
+		expect(stationStops(stops, stations, 500).get('a')).toBe('NEAR');
+	});
+
 	it('keeps stops within range, with their distance', () => {
 		const stops = [
 			{ id: 'a', name: 'A', at: [5.13, 51.68] as [number, number] },
