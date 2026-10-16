@@ -252,6 +252,11 @@
 	// The planner's date and time, kept from walk to walk. Stamped with the list's day: pick another
 	// travel day there and the planner starts over from it.
 	let trip = $state<{ date: string; time: string; day: string } | null>(null);
+	/** One travel day: a date picked in the planner is the list's and map's day too, if the timetable covers it. */
+	function keepTrip(t: { date: string; time: string }) {
+		if (t.date >= today && t.date <= lastDay) day = t.date;
+		trip = { ...t, day };
+	}
 
 	async function fetchWalk(id: string, signal: AbortSignal): Promise<WalkDetailData> {
 		const r = await fetch(`/api/walks/${encodeURIComponent(id)}`, { signal });
@@ -378,7 +383,7 @@
 					demo={data.demo}
 					{day}
 					trip={trip?.day === day ? trip : null}
-					ontrip={(t) => (trip = { ...t, day })}
+					ontrip={keepTrip}
 					disruptions={walkDisruptions(selected)}
 					onclose={() => select(null)}
 					{onsaved}
