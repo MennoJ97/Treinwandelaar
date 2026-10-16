@@ -6,6 +6,8 @@ const RAW_DIR = process.env.RAW_CACHE_DIR ?? 'data/raw';
 const USER_AGENT = 'Treinwandelaar/0.1 (personal, non-commercial walk planner)';
 const MIN_INTERVAL_MS = 1000;
 const REFRESH = process.argv.includes('--refresh');
+/** Only the overview pages afresh: new and removed walks show up, known walks' pages stay cached. */
+const REFRESH_LISTS = process.argv.includes('--refresh-lists');
 
 let lastRequest = 0;
 let oldest: Date | null = null;
@@ -44,12 +46,29 @@ export function readCached(url: string, init: RequestInit = {}): string | null {
  * not make a walk look delisted (the ingests prune walks they didn't produce). Only a 404/410 means
  * the page is gone.
  */
-export async function fetchCached(
+export function fetchCached(
 	url: string,
 	init: RequestInit = {},
 	accept: (text: string) => boolean = () => true
 ): Promise<string> {
-	if (!REFRESH) {
+	return fetchMaybeFresh(url, init, accept, REFRESH);
+}
+
+/**
+ * An overview page, the one that says which walks (or stages) exist: like `fetchCached`, but also
+ * downloaded afresh on --refresh-lists, so a light refresh finds new and delisted walks.
+ */
+export function fetchList(url: string): Promise<string> {
+	return fetchMaybeFresh(url, {}, () => true, REFRESH || REFRESH_LISTS);
+}
+
+async function fetchMaybeFresh(
+	url: string,
+	init: RequestInit,
+	accept: (text: string) => boolean,
+	fresh: boolean
+): Promise<string> {
+	if (!fresh) {
 		const cached = readCached(url, init);
 		if (cached !== null) return cached;
 		return download(url, init, accept);

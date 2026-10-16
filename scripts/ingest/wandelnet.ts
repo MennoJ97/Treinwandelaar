@@ -8,7 +8,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { openDb } from '../../src/lib/server/db';
 import { haversine, lineLengthKm, nearest, type LngLat } from '../../src/lib/geo';
 import { WALKABLE_STATION_M, type Collection, type Station } from '../../src/lib/types';
-import { fetchCached, oldestFetch } from '../lib/http';
+import { fetchCached, fetchList, oldestFetch } from '../lib/http';
 import { pruneStale, recordFetched, saveWalk } from '../lib/store';
 import { WANDELNET, parseGpx, parseList, parseReviews, parseRoutePage } from '../lib/wandelnet';
 
@@ -80,7 +80,7 @@ async function main() {
 	const seen = new Set<string>();
 	const stored: { name: string; start?: string; end?: string; km: number }[] = [];
 	for (const { path, collection } of COLLECTIONS) {
-		const list = parseList(await fetchCached(`${WANDELNET}${path}`));
+		const list = parseList(await fetchList(`${WANDELNET}${path}`));
 		console.log(`\n${path} lists ${list.length} walks.`);
 		let count = 0;
 

@@ -4,12 +4,12 @@
  * (e.g. "herfstwandelingen") have no such link and are skipped. Run after `wandelnet`.
  */
 import { openDb, transaction } from '../../src/lib/server/db';
-import { fetchCached } from '../lib/http';
+import { fetchCached, fetchList } from '../lib/http';
 import { NSNL, parseWalkLinks, parseWalkPage } from '../lib/nsnl';
 
 async function main() {
 	const db = openDb();
-	const slugs = parseWalkLinks(await fetchCached(`${NSNL}/dagje-uit/wandelen`));
+	const slugs = parseWalkLinks(await fetchList(`${NSNL}/dagje-uit/wandelen`));
 	console.log(`ns.nl lists ${slugs.length} walk/theme pages.`);
 
 	const findWalk = db.prepare(`select id, name from walks where id = ?`);
