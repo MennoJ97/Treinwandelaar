@@ -25,10 +25,21 @@
 		onselect: (id: string | null) => void;
 		/** You asked the map where you are: here's the station closest to you. */
 		onlocate: (code: string) => void;
+		/** How many pixels at the map's bottom are behind something, like the list on small screens. */
+		obscured?: () => number;
 	}
 
-	let { walks, stations, home, reachability, selectedId, credit, onselect, onlocate }: Props =
-		$props();
+	let {
+		walks,
+		stations,
+		home,
+		reachability,
+		selectedId,
+		credit,
+		onselect,
+		onlocate,
+		obscured = () => 0
+	}: Props = $props();
 
 	/** Further than this from any Dutch station (abroad, say) and we leave the home station alone. */
 	const LOCATE_MAX_METRES = 50_000;
@@ -54,11 +65,15 @@
 	/**
 	 * On wide screens the list panel floats over the map's left edge; keep routes out from under it.
 	 * `legend` also keeps them clear of the legend in the bottom corner, so a route's end marker
-	 * doesn't land behind it.
+	 * doesn't land behind it. On small screens the list covers the map's bottom, by as much as it's
+	 * pulled up; that part never takes more than leaves the routes a usable strip.
 	 */
 	function panelPadding(base: number, legend = false) {
 		const wide = window.matchMedia('(min-width: 800px)').matches;
-		if (!wide) return { top: base, right: base, left: base, bottom: base + (legend ? 40 : 0) };
+		if (!wide) {
+			const covered = Math.min(obscured(), Math.max(0, container.clientHeight - 2 * base - 160));
+			return { top: base, right: base, left: base, bottom: base + (legend ? 40 : 0) + covered };
+		}
 		return { top: base, right: base, left: 412 + base, bottom: base + (legend ? 124 : 0) };
 	}
 
@@ -447,5 +462,12 @@
 	.map {
 		position: absolute;
 		inset: 0;
+	}
+
+	/* Small screens: the (i) button rides on the list's top edge, like the legend. */
+	@media (max-width: 799px) {
+		.map :global(.maplibregl-ctrl-bottom-right) {
+			transform: translateY(calc(-1 * var(--sheet-cover, 0px)));
+		}
 	}
 </style>

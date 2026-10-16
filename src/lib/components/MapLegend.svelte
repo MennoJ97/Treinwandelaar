@@ -116,13 +116,14 @@
 		background: var(--band-unknown);
 	}
 
-	/* Small screens: the map is a 45vh strip, and the station picker sits right under it, so the key
-	   drops the station and keeps to one caption line in its corner. */
+	/* Small screens: the list covers the map's bottom and the station picker sits right under the
+	   key, so it drops the station, keeps to one caption line, and rides on the list's top edge. */
 	@media (max-width: 799px) {
 		.legend {
 			left: 8px;
 			right: auto;
 			bottom: 8px;
+			transform: translateY(calc(-1 * var(--sheet-cover, 0px)));
 			width: min(13.5rem, 62vw);
 			padding: 6px 8px 5px;
 			font-size: 0.75rem;

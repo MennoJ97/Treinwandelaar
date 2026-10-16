@@ -221,12 +221,26 @@
 	// --- Selection lives in the URL so reloads and links keep it ------------------------------------
 	const selectedId = $derived(page.url.searchParams.get('walk'));
 	let panel: HTMLElement;
+	let mapArea: HTMLElement;
+	let scrollY = $state(0);
+
+	/**
+	 * Small screens scroll the page, and the list is a sheet over a map taller than the 45% it
+	 * shows at first: the page opens this far down, so pulling the list down shows more map.
+	 */
+	function sheetRest() {
+		if (!mapArea || window.matchMedia('(min-width: 800px)').matches) return 0;
+		return Math.max(0, Math.round(mapArea.offsetHeight - window.innerHeight * 0.45));
+	}
+
+	/** How much of the map's bottom the list covers (the head is stuck to the top, so: the scroll). */
+	const mapCovered = () => (window.matchMedia('(min-width: 800px)').matches ? 0 : window.scrollY);
 
 	// Switching between list and detail should start at the top, not the list's scroll position.
 	$effect(() => {
 		void selectedId;
 		panel?.scrollTo({ top: 0 });
-		window.scrollTo({ top: 0 }); // small screens scroll the page, not the panel
+		window.scrollTo({ top: sheetRest() });
 	});
 
 	// The server opens ?walk= only on the first render; after that the page fetches the one walk.
@@ -294,54 +308,60 @@
 	);
 </script>
 
+<svelte:window bind:scrollY />
+
 <div class="app">
-	<!-- "mhjansen.nl / treinwandelaar", the same order as the nav on the other mhjansen.nl sites,
+	<!-- The bar and the map stay put on small screens while the list slides over them. -->
+	<div class="head">
+		<!-- "mhjansen.nl / treinwandelaar", the same order as the nav on the other mhjansen.nl sites,
 	     with the family's light/dark switch last. Outside the panel on purpose: family.js only wires
 	     up switches that exist when the page loads, and the panel re-renders. -->
-	<header class="topbar">
-		<h1 class="brand">
-			<a class="up" href="https://mhjansen.nl">mhjansen.nl</a><span class="sep" aria-hidden="true"
-				>/</span
-			><a class="here" href="/"><Mark />treinwandelaar</a>
-		</h1>
-		<div class="bar-actions">
-			<button type="button" class="sources-toggle" popovertarget="sources">Bronnen</button>
-			<button class="theme-toggle" aria-label="Donkere modus" hidden></button>
+		<header class="topbar">
+			<h1 class="brand">
+				<a class="up" href="https://mhjansen.nl">mhjansen.nl</a><span class="sep" aria-hidden="true"
+					>/</span
+				><a class="here" href="/"><Mark />treinwandelaar</a>
+			</h1>
+			<div class="bar-actions">
+				<button type="button" class="sources-toggle" popovertarget="sources">Bronnen</button>
+				<button class="theme-toggle" aria-label="Donkere modus" hidden></button>
+			</div>
+		</header>
+		<!-- Who the routes come from, one tap away from anywhere instead of below the whole list. -->
+		<div id="sources" class="sources" popover>
+			<p>
+				{#if data.demo}
+					{osmCredit(data.osmUpdated)}: routes van Wandelnet en andere beheerders, ingetekend door
+					vrijwilligers.
+					<a href="/api/osm-walks.geojson" data-sveltekit-reload>Download (ODbL)</a>.
+				{:else}
+					{wandelnetCredit(data.wandelnetUpdated)}; foto's en praktische info van NS. Iets mis op
+					een route?
+					<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Meld het bij Wandelnet</a>.
+					Alleen voor persoonlijk gebruik.
+					{#if hasOsm}Andere routes © OpenStreetMap-bijdragers (ODbL).{/if}
+				{/if}
+			</p>
 		</div>
-	</header>
-	<!-- Who the routes come from, one tap away from anywhere instead of below the whole list. -->
-	<div id="sources" class="sources" popover>
-		<p>
-			{#if data.demo}
-				{osmCredit(data.osmUpdated)}: routes van Wandelnet en andere beheerders, ingetekend door
-				vrijwilligers.
-				<a href="/api/osm-walks.geojson" data-sveltekit-reload>Download (ODbL)</a>.
-			{:else}
-				{wandelnetCredit(data.wandelnetUpdated)}; foto's en praktische info van NS. Iets mis op een
-				route?
-				<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Meld het bij Wandelnet</a>.
-				Alleen voor persoonlijk gebruik.
-				{#if hasOsm}Andere routes © OpenStreetMap-bijdragers (ODbL).{/if}
-			{/if}
-		</p>
-	</div>
 
-	<div class="map-area">
-		<WalkMap
-			walks={visible}
-			stations={data.stations}
-			{home}
-			{reachability}
-			{selectedId}
-			credit={mapCredit}
-			onselect={select}
-			onlocate={(code) => (home = code)}
-		/>
-		<MapLegend
-			homeName={homeStation?.name ?? ''}
-			dayLabel={dayLabel(day)}
-			loading={reachStatus === 'loading'}
-		/>
+		<div class="map-area" bind:this={mapArea} style:--sheet-cover="{scrollY}px">
+			<WalkMap
+				walks={visible}
+				stations={data.stations}
+				{home}
+				{reachability}
+				{selectedId}
+				credit={mapCredit}
+				onselect={select}
+				onlocate={(code) => (home = code)}
+				obscured={mapCovered}
+			/>
+			<MapLegend
+				homeName={homeStation?.name ?? ''}
+				dayLabel={dayLabel(day)}
+				loading={reachStatus === 'loading'}
+			/>
+		</div>
 	</div>
 
 	<aside class="panel" bind:this={panel}>
@@ -526,7 +546,6 @@
 		/* minmax(0, …): an auto column grows to its widest child's min-content, and with the phone's
 		   text size turned up that dragged the whole page, bar and map included, past the screen. */
 		grid-template-columns: minmax(0, 1fr);
-		grid-template-rows: auto 45vh auto;
 		min-height: 100vh;
 	}
 
@@ -580,17 +599,30 @@
 		font-weight: 700;
 	}
 
-	/* Small screens: the map stays put and the list slides up over it, like a bottom sheet. */
-	.map-area {
+	/* Small screens: bar and map stay put and the list slides over them, like a bottom sheet. The
+	   map reaches down to a strip of list, so pulling the list down (see sheetRest) shows more of it.
+	   svh, not vh: the map shouldn't resize as the phone's address bar comes and goes. */
+	.head {
 		position: sticky;
 		top: 0;
-		height: 45vh;
 		z-index: 0;
+		display: flex;
+		flex-direction: column;
+		height: calc(100svh - 7.5rem);
 	}
 
+	.map-area {
+		position: relative;
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	/* At least a screen tall, so even a short list can be pushed all the way up over the map. */
 	.panel {
 		position: relative;
 		z-index: 1;
+		min-height: 100svh;
 		background: var(--surface);
 		box-shadow: 0 -4px 12px var(--shadow);
 	}
@@ -599,6 +631,18 @@
 		.app {
 			display: block;
 			height: 100vh;
+		}
+
+		.head {
+			display: contents;
+		}
+
+		.map-area {
+			overflow: visible;
+		}
+
+		.panel {
+			min-height: 0;
 		}
 
 		.map-area {
