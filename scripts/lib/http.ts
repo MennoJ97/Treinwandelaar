@@ -39,16 +39,47 @@ export function readCached(url: string, init: RequestInit = {}): string | null {
  * Fetch text with an on-disk cache and at most one request per second.
  * Raw responses are kept so parsers can be re-run without hitting the source again;
  * pass --refresh to re-download. `accept` can reject a 200 that is really an error, so it isn't cached.
+ *
+ * On --refresh a failed download falls back to the cached copy: a hiccup halfway through a run must
+ * not make a walk look delisted (the ingests prune walks they didn't produce). Only a 404/410 means
+ * the page is gone.
  */
 export async function fetchCached(
 	url: string,
 	init: RequestInit = {},
 	accept: (text: string) => boolean = () => true
 ): Promise<string> {
-	const file = cacheFile(url, init);
-	const cached = REFRESH ? null : readCached(url, init);
-	if (cached !== null) return cached;
+	if (!REFRESH) {
+		const cached = readCached(url, init);
+		if (cached !== null) return cached;
+		return download(url, init, accept);
+	}
+	try {
+		return await download(url, init, accept);
+	} catch (err) {
+		const gone = err instanceof HttpError && (err.status === 404 || err.status === 410);
+		const cached = gone ? null : readCached(url, init);
+		if (cached === null) throw err;
+		console.warn(`  ${(err as Error).message}; using the cached copy`);
+		return cached;
+	}
+}
 
+class HttpError extends Error {
+	constructor(
+		message: string,
+		readonly status: number
+	) {
+		super(message);
+	}
+}
+
+async function download(
+	url: string,
+	init: RequestInit,
+	accept: (text: string) => boolean
+): Promise<string> {
+	const file = cacheFile(url, init);
 	const wait = lastRequest + MIN_INTERVAL_MS - Date.now();
 	if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 	lastRequest = Date.now();
@@ -57,7 +88,7 @@ export async function fetchCached(
 		...init,
 		headers: { 'User-Agent': USER_AGENT, ...init.headers }
 	});
-	if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
+	if (!res.ok) throw new HttpError(`${res.status} ${res.statusText} for ${url}`, res.status);
 	const text = await res.text();
 	if (!accept(text)) throw new Error(`Unusable response for ${url}: ${text.slice(0, 200)}`);
 	mkdirSync(RAW_DIR, { recursive: true });

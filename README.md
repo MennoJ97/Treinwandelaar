@@ -47,7 +47,16 @@ chosen day. The NS trip planner is only used for the exact trains in a walk's de
 
 ```bash
 docker compose up -d --build
-docker compose run --rm ingest   # first fill, then e.g. weekly from cron
+docker compose run --rm ingest   # first fill
+```
+
+The timetable needs nothing more: run `ingest:gtfs` daily (it only downloads when OVapi has a newer feed). For the
+walks, `npm run ingest:weekly` downloads Wandelnet afresh (`--refresh`; a page that fails to download keeps its
+cached copy, so a hiccup doesn't delist a walk), refreshes the OSM extract and rebuilds the feeder buses. From
+cron, e.g. Mondays at 04:00 (`ingest` has a compose profile, so `up --build` doesn't rebuild it):
+
+```cron
+0 4 * * 1 cd /path/to/stack && { docker compose --profile ingest build -q ingest && docker compose run -T --rm ingest npm run ingest:weekly; } > /path/to/data/ingest-weekly.log 2>&1
 ```
 
 Set `ORIGIN` and the Traefik labels in `docker-compose.yml` to match your setup, with an auth middleware in front.

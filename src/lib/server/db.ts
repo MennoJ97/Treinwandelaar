@@ -131,7 +131,9 @@ export function openDb(path = process.env.DATABASE_PATH ?? 'data/treinwandelaar.
 	if (instance) return instance;
 	mkdirSync(dirname(path), { recursive: true });
 	const db = new DatabaseSync(path);
-	db.exec('pragma journal_mode = wal; pragma foreign_keys = on;');
+	// The app, the daily timetable sidecar and the weekly refresh share this file: wait for each
+	// other's writes instead of failing.
+	db.exec('pragma journal_mode = wal; pragma foreign_keys = on; pragma busy_timeout = 60000;');
 	initSchema(db);
 	instance = db;
 	return db;
