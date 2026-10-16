@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+	accessKm,
+	accessMinutes,
 	addMinutes,
 	amsterdamIso,
 	breakMinutes,
@@ -19,6 +21,12 @@ describe('itinerary', () => {
 		expect(breakMinutes(20, pace)).toBe(40);
 		expect(walkMinutes(14.5, pace)).toBe(193 + 30);
 		expect(walkMinutes(14.5, { speedKmh: 4.5, breakMinPer10Km: 0 })).toBe(193);
+	});
+
+	it('estimates the walk between station and route with a detour on the straight line', () => {
+		expect(accessKm(1708)).toBeCloseTo(2.2, 1); // Dordrecht Zuid → Hollandse Biesbosch
+		expect(accessMinutes(1708)).toBe(30);
+		expect(accessMinutes(1708, 6)).toBe(23);
 	});
 
 	it('estimates bus legs conservatively, in 5-minute steps', () => {

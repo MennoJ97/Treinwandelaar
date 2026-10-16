@@ -25,6 +25,17 @@ export function busMinutes(metres: number): number {
 	return Math.ceil((10 + (metres / 1000) * 3) / 5) * 5;
 }
 
+/** Streets wind: the walk between a station or stop and the route is about this much longer than the straight line. */
+const DETOUR = 1.3;
+
+/** Kilometres on foot between a station (or stop) and the route, from the straight-line metres. */
+export const accessKm = (metres: number) => (metres * DETOUR) / 1000;
+
+/** Minutes on foot between a station (or stop) and the route, rounded up. */
+export function accessMinutes(metres: number, speedKmh = DEFAULT_PACE.speedKmh): number {
+	return Math.ceil((accessKm(metres) / speedKmh) * 60);
+}
+
 export function addMinutes(iso: string, minutes: number): string {
 	return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
 }

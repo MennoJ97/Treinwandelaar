@@ -18,7 +18,7 @@
 		"ingest:stations": "tsx --env-file-if-exists=.env scripts/ingest/stations.ts",
 		"ingest:wandelnet": "tsx --env-file-if-exists=.env scripts/ingest/wandelnet.ts",
 		"ingest:nsnl": "tsx --env-file-if-exists=.env scripts/ingest/nsnl.ts",
-		"ingest": "npm run ingest:stations && npm run ingest:gtfs && npm run ingest:wandelnet && npm run ingest:paden && npm run ingest:nsnl && npm run ingest:osm",
+		"ingest": "npm run ingest:stations && npm run ingest:wandelnet && npm run ingest:paden && npm run ingest:nsnl && npm run ingest:osm && npm run ingest:gtfs",
 		"ingest:paden": "tsx --env-file-if-exists=.env scripts/ingest/paden.ts",
 		"ingest:gtfs": "tsx --env-file-if-exists=.env scripts/ingest/gtfs.ts",
 		"ingest:osm": "tsx --env-file-if-exists=.env scripts/ingest/osm.ts"

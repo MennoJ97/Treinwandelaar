@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import FeederLeg from './FeederLeg.svelte';
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
 	import { endLabel, osmNoteUrl, startLabel, WANDELNET_MELDPUNT } from '#lib/walk.js';
 	import {
+		accessKm,
+		accessMinutes,
 		addMinutes,
 		busMinutes,
 		amsterdamIso,
@@ -15,9 +18,11 @@
 		DEFAULT_PACE
 	} from '#lib/itinerary.js';
 	import {
+		AT_STATION_M,
 		COLLECTION_LABELS,
 		WALKABLE_STATION_M,
 		type Disruption,
+		type Feeders,
 		type Station,
 		type TripOption,
 		type WalkDetail
@@ -136,22 +141,109 @@
 		return () => controller.abort();
 	});
 
+	// --- Station to route and back: nothing, a walk, or a bus ---------------------------------------
+	type Access = 'station' | 'walk' | 'bus';
+	const accessAt = (metres: number | null): Access =>
+		metres == null || metres <= AT_STATION_M
+			? 'station'
+			: metres <= WALKABLE_STATION_M
+				? 'walk'
+				: 'bus';
+	const startAccess = $derived(accessAt(walk.startStationM));
+	const endAccess = $derived(accessAt(walk.endStationM));
+	/** Getting off a train and finding the bus, or the other way round. */
+	const TRANSFER_MIN = 5;
+
+	let feeders = $state<Load<Feeders>>({ status: 'idle' });
+	$effect(() => {
+		if (startAccess !== 'bus' && endAccess !== 'bus') {
+			feeders = { status: 'idle' };
+			return;
+		}
+		const controller = new AbortController();
+		feeders = { status: 'loading' };
+		fetch(`/api/walks/${encodeURIComponent(walk.id)}/feeders?date=${date}`, {
+			signal: controller.signal
+		})
+			.then(async (res) => {
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				feeders = { status: 'done', data: (await res.json()) as Feeders };
+			})
+			.catch((err) => {
+				if (!controller.signal.aborted) feeders = { status: 'error', message: err.message };
+			});
+		return () => controller.abort();
+	});
+	/** Known rides for a route end; null when there are none to plan with (the estimate applies). */
+	const ridesFor = (side: keyof Feeders) => (feeders.status === 'done' ? feeders.data[side] : null);
+	const notBefore = (iso: string, earliest: string) => new Date(iso) >= new Date(earliest);
+	/** The departures worth showing: the first few you can make. */
+	const RIDE_CHOICES = 4;
+
 	// --- The walk -----------------------------------------------------------------------------------
 	const minutesWalking = $derived(walkMinutes(walk.distanceKm, { speedKmh, breakMinPer10Km }));
 	const minutesBreak = $derived(breakMinutes(walk.distanceKm, { speedKmh, breakMinPer10Km }));
-	const walkStart = $derived.by(() => {
+	/** When you're at the start station: off the train, or leaving home if the walk starts there. */
+	const atStartStation = $derived.by(() => {
 		if (outbound.status === 'done' && outbound.data[outIndex])
 			return outbound.data[outIndex].arrival;
 		if (outbound.status === 'loading') return null;
 		return amsterdamIso(date, time);
 	});
-	const busAtStart = $derived((walk.startStationM ?? 0) > WALKABLE_STATION_M);
-	const busAtEnd = $derived((walk.endStationM ?? 0) > WALKABLE_STATION_M);
-	const busStartMin = $derived(busAtStart ? busMinutes(walk.startStationM!) : 0);
-	const busEndMin = $derived(busAtEnd ? busMinutes(walk.endStationM!) : 0);
-	/** When you're back at the end station: bus there, walk, bus back. */
-	const walkEnd = $derived(
-		walkStart ? addMinutes(walkStart, busStartMin + minutesWalking + busEndMin) : null
+
+	let startPick = $state<string | null>(null);
+	const startRides = $derived.by(() => {
+		const rides = ridesFor('start');
+		if (startAccess !== 'bus' || !rides || !atStartStation) return null;
+		const earliest = addMinutes(atStartStation, TRANSFER_MIN);
+		const next = rides.filter((r) => notBefore(r.departure, earliest)).slice(0, RIDE_CHOICES);
+		return next.length ? next : null;
+	});
+	const startRide = $derived(
+		startRides ? (startRides.find((r) => r.departure === startPick) ?? startRides[0]) : null
+	);
+	const busStartMin = $derived(startAccess === 'bus' ? busMinutes(walk.startStationM!) : 0);
+
+	/** When the route itself starts. */
+	const walkStart = $derived.by(() => {
+		if (!atStartStation) return null;
+		if (startAccess === 'walk')
+			return addMinutes(atStartStation, accessMinutes(walk.startStationM!, speedKmh));
+		if (startAccess !== 'bus') return atStartStation;
+		if (feeders.status === 'loading') return null;
+		if (startRide) return addMinutes(startRide.arrival, accessMinutes(startRide.stopM, speedKmh));
+		return addMinutes(atStartStation, busStartMin);
+	});
+	const walkEnd = $derived(walkStart ? addMinutes(walkStart, minutesWalking) : null);
+
+	let endPick = $state<string | null>(null);
+	const endRides = $derived.by(() => {
+		const rides = ridesFor('end');
+		if (endAccess !== 'bus' || !rides || !walkEnd) return null;
+		// Each ride's own stop: some lines stop closer to the route than others.
+		const next = rides
+			.filter((r) => notBefore(r.departure, addMinutes(walkEnd, accessMinutes(r.stopM, speedKmh))))
+			.slice(0, RIDE_CHOICES);
+		return next.length ? next : null;
+	});
+	const endRide = $derived(
+		endRides ? (endRides.find((r) => r.departure === endPick) ?? endRides[0]) : null
+	);
+	const busEndMin = $derived(endAccess === 'bus' ? busMinutes(walk.endStationM!) : 0);
+
+	/** When you're at the end station, ready for the train back. */
+	const atEndStation = $derived.by(() => {
+		if (!walkEnd) return null;
+		if (endAccess === 'walk')
+			return addMinutes(walkEnd, accessMinutes(walk.endStationM!, speedKmh));
+		if (endAccess !== 'bus') return walkEnd;
+		if (feeders.status === 'loading') return null;
+		if (endRide) return endRide.arrival;
+		return addMinutes(walkEnd, busEndMin);
+	});
+	/** Trains back from here on: off the bus and to the platform first. */
+	const trainBackFrom = $derived(
+		atEndStation && endRide ? addMinutes(atEndStation, TRANSFER_MIN) : atEndStation
 	);
 
 	// --- Train back ---------------------------------------------------------------------------------
@@ -160,7 +252,7 @@
 	let loadingLater = $state(false);
 
 	$effect(() => {
-		const end = walkEnd;
+		const end = trainBackFrom;
 		if (!hasNsKey || endsAtHome || !walk.endStation || !end) {
 			back = { status: 'idle' };
 			return;
@@ -215,9 +307,69 @@
 		if (res.ok) onsaved(await res.json());
 	}
 
+	/** The route's own start or end, where it isn't at the station: the village when a bus goes there. */
+	const routeEndName = (side: 'start' | 'end') => {
+		const bus = (side === 'start' ? startAccess : endAccess) === 'bus';
+		const place = side === 'start' ? walk.startPlace : walk.endPlace;
+		return bus && place ? place : side === 'start' ? 'Begin van de route' : 'Eind van de route';
+	};
+
 	const km = (n: number) => n.toLocaleString('nl-NL', { maximumFractionDigits: 1 });
 	const rating = (n: number) => n.toLocaleString('nl-NL', { minimumFractionDigits: 1 });
 </script>
+
+{#snippet access(side: 'start' | 'end')}
+	{@const kind = side === 'start' ? startAccess : endAccess}
+	{@const metres = (side === 'start' ? walk.startStationM : walk.endStationM) ?? 0}
+	{@const station = side === 'start' ? walk.startStationName : walk.endStationName}
+	{@const ride = side === 'start' ? startRide : endRide}
+	{#if kind === 'walk'}
+		<li class="seg access">
+			<span class="line" aria-hidden="true"></span>
+			<div class="body">
+				<p>
+					± {km(accessKm(metres))} km lopen
+					{side === 'start'
+						? `van station ${station} naar het begin van de route`
+						: `naar station ${station}`}, ± {accessMinutes(metres, speedKmh)} min
+				</p>
+			</div>
+		</li>
+	{:else if kind === 'bus'}
+		{@const known = ridesFor(side)}
+		<li class="seg bus">
+			<span class="line" aria-hidden="true"></span>
+			<div class="body">
+				{#if feeders.status === 'loading'}
+					<p class="muted">Bussen zoeken…</p>
+				{:else if ride}
+					<FeederLeg
+						rides={side === 'start' ? startRides : endRides}
+						chosen={ride}
+						onselect={(r) =>
+							side === 'start' ? (startPick = r.departure) : (endPick = r.departure)}
+						stopMinutes={accessMinutes(ride.stopM, speedKmh)}
+						{side}
+					/>
+				{:else}
+					<p class="notice">
+						De route {side === 'start' ? 'begint' : 'eindigt'} in {side === 'start'
+							? walk.startPlace
+							: walk.endPlace}, {km(metres / 1000)} km van station {station}.
+						{#if known?.length}
+							Na {side === 'start' ? 'aankomst' : 'de wandeling'} rijdt er geen rechtstreekse bus meer;
+							neem een taxi
+						{:else if known}
+							Die dag rijdt er geen rechtstreekse bus; neem een taxi
+						{:else}
+							Neem de bus of een taxi
+						{/if}; de planning rekent daar ± {side === 'start' ? busStartMin : busEndMin} min voor.
+					</p>
+				{/if}
+			</div>
+		</li>
+	{/if}
+{/snippet}
 
 <article class="detail">
 	<header>
@@ -336,9 +488,20 @@
 					</div>
 				</li>
 				<li class="stop">
-					<span class="time tabular">{walkStart ? formatTime(walkStart) : ''}</span>
+					<span class="time tabular">{atStartStation ? formatTime(atStartStation) : ''}</span>
 					<span class="dot" aria-hidden="true"></span>
 					<span class="name">{walk.startStationName}</span>
+				</li>
+			{/if}
+
+			{#if startAccess !== 'station'}
+				{@render access('start')}
+				<li class="stop">
+					<span class="time tabular"
+						>{walkStart ? `${startRide ? '' : '± '}${formatTime(walkStart)}` : ''}</span
+					>
+					<span class="dot" aria-hidden="true"></span>
+					<span class="name">{routeEndName('start')}</span>
 				</li>
 			{/if}
 
@@ -346,12 +509,6 @@
 			<li class="seg path">
 				<span class="line" aria-hidden="true"></span>
 				<div class="body">
-					{#if busAtStart}
-						<p class="notice">
-							De route begint in {walk.startPlace}, {km((walk.startStationM ?? 0) / 1000)} km van het
-							station. Neem de bus of een taxi; de planning rekent daar ± {busStartMin} min voor.
-						</p>
-					{/if}
 					<p>
 						<strong>{km(walk.distanceKm)} km wandelen</strong>, ± {formatDuration(minutesWalking)}
 						<span class="muted"
@@ -375,20 +532,27 @@
 						/>
 						<span class="tabular">{breakMinPer10Km} min / 10 km</span>
 					</div>
-					{#if busAtEnd}
-						<p class="notice">
-							De route eindigt in {walk.endPlace}, {km((walk.endStationM ?? 0) / 1000)} km van station
-							{walk.endStationName}. Neem de bus of een taxi; de planning rekent daar ± {busEndMin} min
-							voor.
-						</p>
-					{/if}
 				</div>
 			</li>
 			<li class="stop">
 				<span class="time tabular">{walkEnd ? `± ${formatTime(walkEnd)}` : ''}</span>
 				<span class="dot" aria-hidden="true"></span>
-				<span class="name">{walk.endStationName ?? walk.endPlace}</span>
+				<span class="name"
+					>{endAccess === 'station'
+						? (walk.endStationName ?? walk.endPlace)
+						: routeEndName('end')}</span
+				>
 			</li>
+			{#if endAccess !== 'station'}
+				{@render access('end')}
+				<li class="stop">
+					<span class="time tabular"
+						>{atEndStation ? `${endRide ? '' : '± '}${formatTime(atEndStation)}` : ''}</span
+					>
+					<span class="dot" aria-hidden="true"></span>
+					<span class="name">{walk.endStationName ?? walk.endPlace}</span>
+				</li>
+			{/if}
 
 			<!-- Back -->
 			{#if !endsAtHome}
@@ -677,6 +841,27 @@
 	.path .line {
 		width: 0;
 		border-left: 4px dashed var(--path);
+	}
+
+	/* On foot between the station and the route: the walk's line, thinner. */
+	.access .line {
+		width: 0;
+		min-height: 26px;
+		border-left: 2px dashed var(--path);
+	}
+
+	.access .body p {
+		color: var(--muted);
+		font-size: var(--step--1);
+	}
+
+	/* Hatched, like the buses in a train trip. */
+	.bus .line {
+		background: repeating-linear-gradient(
+			135deg,
+			var(--warn) 0 4px,
+			color-mix(in srgb, var(--warn) 70%, var(--surface)) 4px 8px
+		);
 	}
 
 	.seg .body {
