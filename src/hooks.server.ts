@@ -1,4 +1,5 @@
 import type { Handle } from '@sveltejs/kit/hooks';
+import { compress } from '#lib/server/compress.js';
 import { anonymousAccess } from '#lib/server/context.js';
 import { LOCAL_USER } from '#lib/server/db.js';
 
@@ -11,9 +12,11 @@ import { LOCAL_USER } from '#lib/server/db.js';
  * anonymous visitors through to everything but /login, or 'full' as the shared LOCAL_USER (local dev,
  * a LAN-only setup without Authentik).
  */
-export const handle: Handle = ({ event, resolve }) => {
+export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user =
 		event.request.headers.get('x-authentik-username') ||
 		(anonymousAccess() === 'demo' ? null : LOCAL_USER);
-	return resolve(event);
+	const response = await resolve(event);
+	// A load's fetch to our own API is answered in-process and read as-is: leave it plain.
+	return event.isSubRequest ? response : compress(event.request, response);
 };

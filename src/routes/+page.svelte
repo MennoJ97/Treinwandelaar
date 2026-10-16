@@ -13,6 +13,7 @@
 		type Disruption,
 		type Reachability,
 		type ReachabilityResponse,
+		type WalkDetail as WalkDetailData,
 		type WalkSummary
 	} from '#lib/types.js';
 	import {
@@ -26,6 +27,10 @@
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+
+	/** Walks you saved a status or rating on since the page loaded, in place of their loaded copy. */
+	let saved = $state.raw<Record<string, WalkSummary>>({});
+	const walks = $derived(data.walks.map((w) => saved[w.id] ?? w));
 
 	// --- Home station (remembered per browser) ------------------------------------------------------
 	const HOME_KEY = 'treinwandelaar.home';
@@ -146,7 +151,7 @@
 	let shown = $state<Collection[]>([...collections]);
 	const countBy = $derived(
 		Object.fromEntries(
-			collections.map((c) => [c, data.walks.filter((w) => w.collection === c).length])
+			collections.map((c) => [c, walks.filter((w) => w.collection === c).length])
 		) as Record<Collection, number>
 	);
 
@@ -171,7 +176,7 @@
 	);
 
 	const visible = $derived.by(() => {
-		const list = data.walks.filter((w) => {
+		const list = walks.filter((w) => {
 			const t = minutesTo(w);
 			if (maxTravel < 180 && t != null && t > maxTravel) return false;
 			if (maxKm < 25 && w.distanceKm > maxKm) return false;
@@ -224,17 +229,64 @@
 		window.scrollTo({ top: 0 }); // small screens scroll the page, not the panel
 	});
 
-	function select(id: string | null) {
+	// The server opens ?walk= only on the first render; after that the page fetches the one walk.
+	let details = $state.raw<Record<string, WalkDetailData>>({});
+	const detail = (id: string) =>
+		details[id] ?? (data.selected?.id === id ? data.selected : undefined);
+	const selected = $derived((selectedId && detail(selectedId)) || null);
+
+	async function fetchWalk(id: string, signal: AbortSignal): Promise<WalkDetailData> {
+		const r = await fetch(`/api/walks/${encodeURIComponent(id)}`, { signal });
+		if (!r.ok) throw new Error(`HTTP ${r.status}`);
+		return r.json();
+	}
+
+	// Back and forward change the URL first; fetch the walk it names.
+	$effect(() => {
+		const id = selectedId;
+		if (!id || detail(id)) return;
+		const controller = new AbortController();
+		fetchWalk(id, controller.signal)
+			.then(remember)
+			// Gone since the list loaded (or the link was wrong): back to the list.
+			.catch(() => {
+				if (!controller.signal.aborted) select(null, true);
+			});
+		return () => controller.abort();
+	});
+
+	/** A save answers with the updated walk: show it, and let the list and map follow. */
+	function onsaved(walk: WalkDetailData) {
+		remember(walk);
+		saved = { ...saved, [walk.id]: walk };
+	}
+
+	function remember(walk: WalkDetailData) {
+		details = { ...details, [walk.id]: walk };
+	}
+
+	/** A click fetches the walk before changing the URL, so the panel swaps in one go. */
+	let opening: AbortController | undefined;
+	async function select(id: string | null, replaceState = false) {
+		opening?.abort();
+		if (id && !detail(id)) {
+			const controller = (opening = new AbortController());
+			try {
+				remember(await fetchWalk(id, controller.signal));
+			} catch {
+				return; // superseded by another click, or the walk is gone: stay where you are
+			}
+		}
 		const url = new URL(page.url.href);
 		if (id) url.searchParams.set('walk', id);
 		else url.searchParams.delete('walk');
-		goto(url, { reset: false });
+		goto(url, { reset: false, replaceState });
 	}
 
 	const km = (n: number) => n.toLocaleString('nl-NL', { maximumFractionDigits: 1 });
 
 	// The demo shows only OpenStreetMap walks; signed-in users get those Wandelnet doesn't cover.
-	const hasOsm = $derived(data.walks.some((w) => w.source === 'osm'));
+	const hasOsm = $derived(walks.some((w) => w.source === 'osm'));
 	const mapCredit = $derived(
 		data.demo
 			? osmCredit(data.osmUpdated)
@@ -293,16 +345,17 @@
 	</div>
 
 	<aside class="panel" bind:this={panel}>
-		{#if data.selected && homeStation}
-			{#key data.selected.id}
+		{#if selected && homeStation}
+			{#key selected.id}
 				<WalkDetail
-					walk={data.selected}
+					walk={selected}
 					home={homeStation}
 					hasNsKey={data.hasNsKey}
 					demo={data.demo}
 					{day}
-					disruptions={walkDisruptions(data.selected)}
+					disruptions={walkDisruptions(selected)}
 					onclose={() => select(null)}
+					{onsaved}
 				/>
 			{/key}
 		{:else}
@@ -410,7 +463,7 @@
 				</p>
 			{/if}
 
-			<p class="count">{visible.length} van {data.walks.length} wandelingen</p>
+			<p class="count">{visible.length} van {walks.length} wandelingen</p>
 
 			{#if visible.length}
 				<ul class="walks">

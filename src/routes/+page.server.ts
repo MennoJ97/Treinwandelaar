@@ -5,9 +5,11 @@ import { timetableLastDay } from '#lib/server/railRouter.js';
 import { getWalk, listWalks, osmUpdated, wandelnetUpdated } from '#lib/server/walks.js';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = ({ url, locals }) => {
+export const load: PageServerLoad = ({ url, locals, untrack }) => {
 	const conn = db();
-	const selectedId = url.searchParams.get('walk');
+	// Only the first render opens ?walk= here. Untracked, so picking another walk in the browser
+	// doesn't send every walk with its route again; the page fetches that one walk itself.
+	const selectedId = untrack(() => url.searchParams.get('walk'));
 	const selected = selectedId ? getWalk(conn, selectedId, locals.user) : null;
 	if (selectedId && !selected) error(404, 'Deze wandeling bestaat niet (meer).');
 	return {

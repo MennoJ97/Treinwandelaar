@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
 	import { endLabel, osmNoteUrl, startLabel, WANDELNET_MELDPUNT } from '#lib/walk.js';
@@ -35,9 +34,11 @@
 		/** Works and disruptions on this walk's train routes that day. */
 		disruptions: Disruption[];
 		onclose: () => void;
+		/** After a save, with the walk as the server now has it. */
+		onsaved: (walk: WalkDetail) => void;
 	}
 
-	let { walk, home, hasNsKey, demo, day, disruptions, onclose }: Props = $props();
+	let { walk, home, hasNsKey, demo, day, disruptions, onclose, onsaved }: Props = $props();
 
 	type Load<T> =
 		| { status: 'idle' }
@@ -211,7 +212,7 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify(update)
 		});
-		if (res.ok) await invalidateAll();
+		if (res.ok) onsaved(await res.json());
 	}
 
 	const km = (n: number) => n.toLocaleString('nl-NL', { maximumFractionDigits: 1 });
