@@ -83,6 +83,52 @@ export function feederRide(
 	return best;
 }
 
+/** Each stop within `maxM` of a station, with the station's code (the nearest, if several). */
+export function stationStops(
+	stops: Stop[],
+	stations: { code: string; at: LngLat }[],
+	maxM: number
+): Map<string, string> {
+	const byStop = new Map<string, string>();
+	const closest = new Map<string, number>();
+	for (const station of stations)
+		for (const [id, m] of stopsNear(stops, station.at, maxM))
+			if (m < (closest.get(id) ?? Infinity)) {
+				closest.set(id, m);
+				byStop.set(id, station.code);
+			}
+	return byStop;
+}
+
+/**
+ * For a route end without a ride to its own station: the stations one trip does run to (or from,
+ * for a start), with the shortest ride in seconds. The ingest uses this to suggest an override.
+ */
+export function stationsReached(
+	stopTimes: StopTime[],
+	side: FeederEnd['side'],
+	routeStops: Map<string, number>,
+	stationOf: Map<string, string>
+): Map<string, number> {
+	const rows = [...stopTimes].sort((a, b) => a.seq - b.seq);
+	const reached = new Map<string, number>();
+	for (let i = 0; i < rows.length; i++) {
+		const board = rows[i];
+		if (!board.pickup) continue;
+		const fromStation = stationOf.get(board.stopId);
+		if (side === 'end' ? !routeStops.has(board.stopId) : !fromStation) continue;
+		for (let j = i + 1; j < rows.length; j++) {
+			const alight = rows[j];
+			if (!alight.dropOff) continue;
+			const code = side === 'end' ? stationOf.get(alight.stopId) : fromStation;
+			if (!code || (side === 'start' && !routeStops.has(alight.stopId))) continue;
+			const s = alight.arr - board.dep;
+			if (s < (reached.get(code) ?? Infinity)) reached.set(code, s);
+		}
+	}
+	return reached;
+}
+
 const MODES: Record<string, string> = { '0': 'Tram', '1': 'Metro', '3': 'Bus', '4': 'Veerboot' };
 
 /** GTFS route types we use for feeders: tram, metro, bus, ferry. Rail has its own planner. */
