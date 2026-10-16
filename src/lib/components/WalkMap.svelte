@@ -410,7 +410,7 @@
 				ready = true;
 			});
 			// family.js fires this whenever the theme on screen changes: the switch, the system,
-			// or another tab or mhjansen.nl site changing the shared cookie.
+			// or another tab or family site changing the shared cookie.
 			onTheme = () => {
 				m.setStyle(styleUrl(), { diff: false });
 				m.once('style.load', () => addOverlay(m));

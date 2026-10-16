@@ -2,7 +2,7 @@
   The treinwandelaar logo: the journey diagram from the detail panel, sideways. Station, train,
   station, then a walker stepping out along the footpath, in NS navy on an NS-yellow tile. The tile
   carries its own contrast, so it reads the same on light and dark pages. Same markup is used on the
-  mhjansen.nl apex page; the square favicon (assets/favicon.svg) is the same drawing.
+  family site's apex page; the square favicon (assets/favicon.svg) is the same drawing.
 -->
 <svg class="mark" aria-hidden="true" focusable="false" viewBox="0 0 34 22">
 	<rect width="34" height="22" rx="3" style="fill:var(--treinwandelaar, #ffc917)" />

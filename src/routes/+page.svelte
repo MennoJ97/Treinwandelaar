@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { FAMILY_SITE } from '$app/env/public';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import WalkMap from '#lib/components/WalkMap.svelte';
@@ -322,14 +323,15 @@
 <div class="app">
 	<!-- The bar and the map stay put on small screens while the list slides over them. -->
 	<div class="head">
-		<!-- "mhjansen.nl / treinwandelaar", the same order as the nav on the other mhjansen.nl sites,
+		<!-- "<family site> / treinwandelaar", the same order as the nav on the family's other sites,
 	     with the family's light/dark switch last. Outside the panel on purpose: family.js only wires
 	     up switches that exist when the page loads, and the panel re-renders. -->
 		<header class="topbar">
 			<h1 class="brand">
-				<a class="up" href="https://mhjansen.nl">mhjansen.nl</a><span class="sep" aria-hidden="true"
-					>/</span
-				><a class="here" href="/"><Mark />treinwandelaar</a>
+				{#if FAMILY_SITE}<a class="up" href={FAMILY_SITE}>{new URL(FAMILY_SITE).host}</a><span
+						class="sep"
+						aria-hidden="true">/</span
+					>{/if}<a class="here" href="/"><Mark />treinwandelaar</a>
 			</h1>
 			<div class="bar-actions">
 				<button type="button" class="sources-toggle" popovertarget="sources">Bronnen</button>
@@ -570,7 +572,7 @@
 		border-bottom: 1px solid var(--line);
 	}
 
-	/* With big phone text the bar can't hold it all: "mhjansen.nl" gives way, the app name doesn't. */
+	/* With big phone text the bar can't hold it all: the family site's name gives way, the app's doesn't. */
 	.brand {
 		display: flex;
 		align-items: baseline;

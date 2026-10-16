@@ -1,4 +1,6 @@
 import type { Handle } from '@sveltejs/kit/hooks';
+import { FAMILY_SITE } from '$app/env/public';
+import { fillTemplate } from '#lib/template.js';
 import { compress } from '#lib/server/compress.js';
 import { anonymousAccess } from '#lib/server/context.js';
 import { LOCAL_USER } from '#lib/server/db.js';
@@ -16,7 +18,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user =
 		event.request.headers.get('x-authentik-username') ||
 		(anonymousAccess() === 'demo' ? null : LOCAL_USER);
-	const response = await resolve(event);
+	const response = await resolve(event, {
+		transformPageChunk: ({ html }) => fillTemplate(html, event.url.origin, FAMILY_SITE)
+	});
 	// A load's fetch to our own API is answered in-process and read as-is: leave it plain.
 	return event.isSubRequest ? response : compress(event.request, response);
 };
