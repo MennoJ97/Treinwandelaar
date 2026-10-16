@@ -18,6 +18,14 @@ export const variables = defineEnvVars({
 		// Fails closed: a typo or a missing .env never opens Wandelnet's data to anonymous visitors.
 		schema: (value) => (value === 'full' ? 'full' : 'demo')
 	},
+	FAMILY_SITE: {
+		description:
+			'Origin of the site this app belongs to (e.g. https://example.org), which serves family.css, ' +
+			'family.js and the link-preview image, and which the header links back to. Optional: without ' +
+			'it the app uses its own greys and type and shows no light/dark switch.',
+		public: true,
+		schema: (value) => (value ? new URL(value).origin : undefined)
+	},
 	HOME_STATION: {
 		description: 'Default home station (NS code), e.g. UT for Utrecht Centraal.',
 		schema: (value) => value || 'UT'

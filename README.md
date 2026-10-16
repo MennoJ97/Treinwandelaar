@@ -63,7 +63,9 @@ extract and rebuilds the feeder buses. From cron, e.g. Mondays at 04:00 (`ingest
 0 4 * * 1 cd /path/to/stack && { docker compose --profile ingest build -q ingest && docker compose run -T --rm ingest npm run ingest:weekly; } > /path/to/data/ingest-weekly.log 2>&1
 ```
 
-Set `ORIGIN` and the Traefik labels in `docker-compose.yml` to match your setup, with an auth middleware in front.
+Set `ORIGIN` and the Traefik labels in `docker-compose.yml` to match your setup, with an auth middleware in front. `FAMILY_SITE`
+(optional, see `.env.example`) points the page at a parent site's shared stylesheet, script and link-preview image;
+domains and keys belong in `.env`, never in the repository.
 
 "Wil ik lopen", "Gelopen", your rating and notes are stored per user, taken from the `X-authentik-username`
 header that Authentik's forward-auth sets (list it in the middleware's `authResponseHeaders`). Traefik

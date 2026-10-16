@@ -5,26 +5,24 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
 		<meta name="robots" content="noindex, nofollow" />
-		<!-- Link preview card (WhatsApp, Signal, iMessage). The image is hosted on the apex, not
-		     here: Authentik guards every path but its Unauthenticated Paths, and a preview fetcher
-		     asking for /og.png would get the login redirect. Rendered by web/landing/make-og.py
-		     in the compose repo. -->
+		<!-- Link preview card (WhatsApp, Signal, iMessage). The image is hosted on the family site
+		     (FAMILY_SITE), not here: Authentik guards every path but its Unauthenticated Paths, and a
+		     preview fetcher asking for /og.png would get the login redirect. Rendered by
+		     web/landing/make-og.py in the compose repo. -->
 		<meta property="og:type" content="website" />
-		<meta property="og:site_name" content="treinwandelaar.mhjansen.nl" />
+		<meta property="og:site_name" content="%treinwandelaar.host%" />
 		<meta property="og:title" content="treinwandelaar" />
-		<meta property="og:description" content="Dagwandelingen met de trein, van station naar station." />
-		<meta property="og:url" content="https://treinwandelaar.mhjansen.nl/" />
-		<meta property="og:image" content="https://mhjansen.nl/og/treinwandelaar.png" />
-		<meta property="og:image:width" content="1200" />
-		<meta property="og:image:height" content="630" />
-		<meta property="og:image:alt" content="treinwandelaar — wandelen van station naar station" />
+		<meta
+			property="og:description"
+			content="Dagwandelingen met de trein, van station naar station."
+		/>
+		<meta property="og:url" content="%treinwandelaar.origin%/" />
 		<meta property="og:locale" content="nl_NL" />
 		<meta name="twitter:card" content="summary_large_image" />
-		<!-- What every mhjansen.nl site shares: greys, type, and the light/dark switch. family.js
+		<!-- %treinwandelaar.*% are filled by hooks.server.ts (lib/template.ts). The family site's
+		     og:image, then what its sites share: greys, type, and the light/dark switch. family.js
 		     is blocking, straight after the stylesheet, so a saved dark choice never flashes light. -->
-		<link rel="stylesheet" href="https://mhjansen.nl/family.css" />
-		<script src="https://mhjansen.nl/family.js"></script>
-		%sveltekit.head%
+		%treinwandelaar.family% %sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
 		<div style="display: contents">%sveltekit.body%</div>

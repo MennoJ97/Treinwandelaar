@@ -15,8 +15,8 @@
 
 <style>
 	/*
-	  Greys, type and the light/dark switch come from https://mhjansen.nl/family.css (linked in
-	  app.html), like every mhjansen.nl site. This file only names them the way the components do
+	  Greys, type and the light/dark switch come from the family site's family.css (FAMILY_SITE,
+	  linked in app.html), like on every site of that family; the fallbacks below stand in without it. This file only names them the way the components do
 	  and adds what is specific to this app: the rail/footpath colours of the journey diagram, the
 	  travel-time ramp on the map and the map's own colours. Dark values use the family's pair of
 	  selectors, so keep the two blocks identical.
@@ -121,6 +121,52 @@
 
 	:global(:root[data-theme='dark'] .maplibregl-ctrl button .maplibregl-ctrl-icon) {
 		filter: invert(1) hue-rotate(180deg);
+	}
+
+	/* Without FAMILY_SITE: the family's tokens, at zero specificity so family.css wins when it's there. */
+	:global(:where(:root)) {
+		--font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+		--bg: #f5f5f3;
+		--surface: #ffffff;
+		--ink: #111111;
+		--muted: #666663;
+		--rule: #d6d6d2;
+		--accent: var(--ink);
+		color-scheme: light dark;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:global(:where(:root)) {
+			--bg: #161616;
+			--surface: #1e1e1e;
+			--ink: #ecece9;
+			--muted: #9c9c98;
+			--rule: #2f2f2f;
+		}
+	}
+
+	:global(:where(body)) {
+		background: var(--bg);
+		color: var(--ink);
+		font-family: var(--font);
+	}
+
+	:global(:where(.mark)) {
+		display: inline-block;
+		height: 1.35em;
+		width: auto;
+		vertical-align: -0.3em;
+		margin-right: 0.4em;
+		overflow: visible;
+	}
+
+	:global(:where(.num)) {
+		font-variant-numeric: tabular-nums;
+	}
+
+	:global(:where(:focus-visible)) {
+		outline: 2px solid var(--accent);
+		outline-offset: 3px;
 	}
 
 	:global(*, *::before, *::after) {
