@@ -22,8 +22,8 @@
 <figure class="legend" aria-label="Legenda: reistijd met de trein">
 	<figcaption>
 		<span
-			>Reistijd<span class="from"> vanaf <strong>{homeName}</strong></span><span class="unit-cap"
-				>(min)</span
+			>Reistijd<span class="from">{' '}vanaf <strong>{homeName}</strong></span><span
+				class="unit-cap">(min)</span
 			></span
 		>
 		<span class="day">{loading ? 'berekenen…' : dayLabel}</span>
