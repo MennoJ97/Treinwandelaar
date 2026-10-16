@@ -427,6 +427,15 @@
 		{/if}
 	</dl>
 
+	{#if walk.description}<p class="description">{walk.description}</p>{/if}
+	{#if walk.accessibility}<p class="description">{walk.accessibility}</p>{/if}
+	{#if walk.dogs}<p class="description"><strong>Honden:</strong> {walk.dogs}</p>{/if}
+	{#if walk.features.length}
+		<ul class="features">
+			{#each walk.features as f (f)}<li>{f}</li>{/each}
+		</ul>
+	{/if}
+
 	<section class="plan" aria-labelledby="plan-title">
 		<h3 id="plan-title">Je dag</h3>
 		<div class="when">
@@ -586,15 +595,6 @@
 			{/if}
 		</ol>
 	</section>
-
-	{#if walk.description}<p class="description">{walk.description}</p>{/if}
-	{#if walk.accessibility}<p class="description">{walk.accessibility}</p>{/if}
-	{#if walk.dogs}<p class="description"><strong>Honden:</strong> {walk.dogs}</p>{/if}
-	{#if walk.features.length}
-		<ul class="features">
-			{#each walk.features as f (f)}<li>{f}</li>{/each}
-		</ul>
-	{/if}
 
 	{#if demo}
 		<p class="login">
