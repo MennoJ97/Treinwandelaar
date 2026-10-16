@@ -36,6 +36,10 @@
 		demo: boolean;
 		/** Travel day chosen in the list (YYYY-MM-DD); the planner starts there. */
 		day: string;
+		/** The date and departure time set in the previous walk's planner, to carry on with. */
+		trip?: { date: string; time: string } | null;
+		/** Every change of date or time, so the next walk can start from it. */
+		ontrip?: (trip: { date: string; time: string }) => void;
 		/** Works and disruptions on this walk's train routes that day. */
 		disruptions: Disruption[];
 		onclose: () => void;
@@ -43,7 +47,8 @@
 		onsaved: (walk: WalkDetail) => void;
 	}
 
-	let { walk, home, hasNsKey, demo, day, disruptions, onclose, onsaved }: Props = $props();
+	let { walk, home, hasNsKey, demo, day, trip, ontrip, disruptions, onclose, onsaved }: Props =
+		$props();
 
 	type Load<T> =
 		| { status: 'idle' }
@@ -70,12 +75,15 @@
 		return { date: amsterdamYmd(now), time: hm };
 	}
 
-	// Today: from now (or tomorrow if it's late). Another day: that morning.
-	// Read once on purpose: after opening, the date is yours to change here.
+	// Where you left the previous walk's planner, else today from now (or tomorrow if it's late),
+	// else that morning. Read once on purpose: after opening, the date is yours to change here.
 	const startDay = untrack(() => day);
-	const initial = startDay === amsterdamYmd() ? defaultStart() : { date: startDay, time: '09:00' };
+	const initial =
+		untrack(() => trip) ??
+		(startDay === amsterdamYmd() ? defaultStart() : { date: startDay, time: '09:00' });
 	let date = $state(initial.date);
 	let time = $state(initial.time);
+	$effect(() => ontrip?.({ date, time }));
 	// --- Your pace: walking speed and breaks, remembered in this browser ---------------------------
 	const PACE_KEY = 'treinwandelaar.pace';
 	let speedKmh = $state<number>(DEFAULT_PACE.speedKmh);
