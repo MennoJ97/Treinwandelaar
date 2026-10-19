@@ -7,9 +7,11 @@
 		homeName: string;
 		dayLabel: string;
 		loading: boolean;
+		/** A walk is open: its trains and buses are on the map too. */
+		transit?: boolean;
 	}
 
-	let { homeName, dayLabel, loading }: Props = $props();
+	let { homeName, dayLabel, loading, transit = false }: Props = $props();
 
 	const steps = [
 		{ band: 'near', label: '< 30' },
@@ -37,6 +39,12 @@
 			</li>{/each}
 	</ol>
 	<p class="none"><span class="swatch" aria-hidden="true"></span>geen trein</p>
+	{#if transit}
+		<p class="transit">
+			<span><span class="rail" aria-hidden="true"></span>trein</span>
+			<span><span class="bus" aria-hidden="true"></span>bus</span>
+		</p>
+	{/if}
 </figure>
 
 <style>
@@ -116,6 +124,38 @@
 		background: var(--band-unknown);
 	}
 
+	/* The open walk's trains and buses, drawn as on the map: rails with sleepers, a dashed bus. */
+	.transit {
+		display: flex;
+		gap: 14px;
+		margin: 4px 0 0;
+		color: var(--muted);
+	}
+
+	.transit > span {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.rail,
+	.bus {
+		width: 18px;
+		height: 3px;
+	}
+
+	.rail {
+		background: repeating-linear-gradient(
+			90deg,
+			var(--transit) 0 3px,
+			color-mix(in srgb, var(--transit) 35%, var(--surface)) 3px 6px
+		);
+	}
+
+	.bus {
+		background: repeating-linear-gradient(90deg, var(--transit) 0 3px, transparent 3px 6px);
+	}
+
 	/* Small screens: the list covers the map's bottom and the station picker sits right under the
 	   key, so it drops the station, keeps to one caption line, and rides on the list's top edge. */
 	@media (max-width: 799px) {
@@ -140,7 +180,8 @@
 		/* "min" moves into the caption, so four ticks fit a narrow key. */
 		.from,
 		.unit,
-		.none {
+		.none,
+		.transit {
 			display: none;
 		}
 

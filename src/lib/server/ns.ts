@@ -1,7 +1,13 @@
 import type { DatabaseSync } from 'node:sqlite';
+import type { LngLat } from '../geo';
 import type { Station, TripLeg, TripOption } from '../types';
+import { buildRailNetwork, legLine, type RailNetwork } from './railMap';
 
 const GATEWAY = 'https://gateway.apiportal.ns.nl';
+
+/** Tracks seldom change: the network is fetched weekly, and built once a day per process. */
+const RAIL_TTL_SECONDS = 7 * 24 * 3600;
+let rail: { builtAt: number; network: RailNetwork } | null = null;
 
 export class NsApiError extends Error {
 	constructor(
@@ -82,7 +88,26 @@ export class NsClient {
 			},
 			opts.ttlSeconds ?? 300
 		);
-		return (data.trips ?? []).map(mapTrip);
+		const network = await this.railNetwork().catch(() => null);
+		const codes = this.stationCodes();
+		return (data.trips ?? []).map((t: any) => mapTrip(t, network && { network, codes }));
+	}
+
+	/** The rail network to draw trains along their tracks; null when it can't be had. */
+	async railNetwork(): Promise<RailNetwork | null> {
+		if (rail && Date.now() - rail.builtAt < 24 * 3600_000) return rail.network;
+		const data = await this.cachedGet('/Spoorkaart-API/api/v1/spoorkaart', {}, RAIL_TTL_SECONDS);
+		const network = buildRailNetwork(data.payload?.features ?? []);
+		if (!network.size) return null;
+		rail = { builtAt: Date.now(), network };
+		return network;
+	}
+
+	/** UIC code → NS station code: trip stops carry the one, the network the other. */
+	private stationCodes(): Map<string, string> {
+		const rows = (this.db?.prepare('select uic, code from stations where uic is not null').all() ??
+			[]) as { uic: string; code: string }[];
+		return new Map(rows.map((r) => [r.uic, r.code]));
 	}
 }
 
@@ -105,7 +130,23 @@ export function normalizeTime(value: string | undefined): string {
 	return (value ?? '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2');
 }
 
-export function mapTrip(t: any): TripOption {
+/**
+ * A trip as the page shows it. With the rail network, each train leg's line follows the tracks
+ * between its stops; without it (or for a bus) the line goes straight from stop to stop.
+ */
+export function mapTrip(
+	t: any,
+	rail?: { network: RailNetwork; codes: Map<string, string> } | null
+): TripOption {
+	const line = (l: any): LngLat[] => {
+		const stops = (l.stops ?? [])
+			.filter((s: any) => s?.lat != null && s?.lng != null)
+			.map((s: any) => ({
+				code: rail?.codes.get(String(s.uicCode)) ?? null,
+				at: [Number(s.lng), Number(s.lat)] as LngLat
+			}));
+		return legLine(l.product?.type === 'BUS' ? null : (rail?.network ?? null), stops);
+	};
 	const legs: TripLeg[] = (t.legs ?? []).map((l: any): TripLeg => ({
 		from: l.origin?.name ?? '?',
 		to: l.destination?.name ?? '?',
@@ -121,7 +162,8 @@ export function mapTrip(t: any): TripOption {
 		).toUpperCase(),
 		isBus: l.product?.type === 'BUS',
 		direction: l.direction ?? null,
-		cancelled: Boolean(l.cancelled)
+		cancelled: Boolean(l.cancelled),
+		line: line(l)
 	}));
 	return {
 		departure: legs[0]?.departure,

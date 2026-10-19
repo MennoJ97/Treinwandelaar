@@ -30,6 +30,9 @@
 		--rail: #1f3a93;
 		--path: #2e7a4c;
 		--warn: #a14a12;
+		/* The open walk's trains and buses on the map: grey, the basemap's own colour for railways,
+		   so they stay in the background of the routes. */
+		--transit: var(--muted);
 
 		/* Travel time is a magnitude: one hue (blue, the train), strongest for walks close by and
 		   fading with distance, so what's near stands out. Validated as an ordinal ramp (monotone

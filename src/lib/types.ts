@@ -130,6 +130,8 @@ export interface TripLeg {
 	isBus: boolean;
 	direction: string | null;
 	cancelled: boolean;
+	/** Where it runs, [lng, lat] pairs: along the tracks for a train; empty when NS gives no stops. */
+	line: [number, number][];
 }
 
 export interface TripOption {
