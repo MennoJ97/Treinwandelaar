@@ -1,4 +1,10 @@
-import { ANONYMOUS_ACCESS, DATABASE_PATH, HOME_STATION, NS_API_KEY } from '$app/env/private';
+import {
+	ANONYMOUS_ACCESS,
+	DATABASE_PATH,
+	HOME_STATION,
+	NS_API_KEY,
+	PROXY_SECRET
+} from '$app/env/private';
 import { openDb } from './db';
 import { NsClient } from './ns';
 
@@ -7,6 +13,8 @@ export const db = () => openDb(DATABASE_PATH);
 export const homeStation = () => HOME_STATION;
 
 export const anonymousAccess = () => ANONYMOUS_ACCESS;
+
+export const proxySecret = () => PROXY_SECRET;
 
 /** NS client, or null when no API key is configured (the UI then shows walks without train times). */
 export function ns(): NsClient | null {

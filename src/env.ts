@@ -18,6 +18,13 @@ export const variables = defineEnvVars({
 		// Fails closed: a typo or a missing .env never opens Wandelnet's data to anonymous visitors.
 		schema: (value) => (value === 'full' ? 'full' : 'demo')
 	},
+	PROXY_SECRET: {
+		description:
+			'Shared with the reverse proxy, which sends it as X-Proxy-Secret on every request. When set, ' +
+			'X-authentik-username counts only on requests that carry it, so a client that reaches the ' +
+			"app's port without the proxy can't pick a user. Optional: unset, the header is always believed.",
+		schema: (value) => value || undefined
+	},
 	FAMILY_SITE: {
 		description:
 			'Origin of the site this app belongs to (e.g. https://example.org), which serves family.css, ' +

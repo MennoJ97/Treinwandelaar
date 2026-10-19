@@ -13,7 +13,9 @@ services:
     # labels:
     #   - traefik.enable=true
     #   - traefik.http.routers.treinwandelaar.rule=Host(`treinwandelaar.example.lan`)
-    #   - traefik.http.routers.treinwandelaar.middlewares=<your-auth-middleware>
+    #   - traefik.http.routers.treinwandelaar.middlewares=<your-auth-middleware>,treinwandelaar-proxy-secret
+    #   # Proves a request came through Traefik; see PROXY_SECRET in .env.example.
+    #   - traefik.http.middlewares.treinwandelaar-proxy-secret.headers.customrequestheaders.X-Proxy-Secret=${PROXY_SECRET}
     #   - traefik.http.services.treinwandelaar.loadbalancer.server.port=3000
 
   # Refresh stations and walks: `docker compose run --rm ingest` (e.g. weekly from the host's cron).
