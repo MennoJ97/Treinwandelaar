@@ -51,6 +51,59 @@ export interface WalkSummary {
 	geometry: [number, number][];
 }
 
+/** A whole LAW route or streekpad, to plan your own stretches of it from station to station. */
+export interface PathSummary {
+	/** 'pad:<slug>' or 'osm:<slug>'; a stretch of it is the walk '<id>:<from code>-<to code>'. */
+	id: string;
+	name: string;
+	source: WalkSource;
+	collection: Collection;
+	km: number;
+}
+
+/**
+ * Where a day on the path can start or end: a station it passes within walking distance, or a stage's
+ * end in a village a bus runs to from a station (found in the timetable by scripts/ingest/gtfs.ts).
+ */
+export interface PathStop {
+	/** What a stretch id calls it: the station code, or 'e3' / 's1' for the end / start of stage 3 / 1. */
+	key: string;
+	/** The station: walked to, or where the bus goes. */
+	code: string;
+	name: string;
+	/** The village, for a stage end reached by bus; null for a station stop. */
+	place: string | null;
+	/** Which of the path's lines (it can break at a ferry or a missing stage) and the point on it. */
+	line: number;
+	index: number;
+	/** Along the path, from the start of its line. */
+	km: number;
+	/** Straight line from that point to the station: walked, or (from a village) a bus ride. */
+	metres: number;
+}
+
+/** One of the path's own numbered stages ("etappes"), as a stretch of one of its lines. */
+export interface PathStage {
+	number: number;
+	/** "Pieterburen – Winsum", where the source names the ends. */
+	places: string | null;
+	line: number;
+	fromKm: number;
+	toKm: number;
+	/** Points on the line where it starts and ends. */
+	fromIndex: number;
+	toIndex: number;
+	url: string;
+}
+
+export interface PathDetail extends PathSummary {
+	/** Simplified lines, [lng, lat] pairs, usually one. */
+	lines: [number, number][][];
+	stops: PathStop[];
+	stages: PathStage[];
+	sourceUrl: string;
+}
+
 export interface WalkDetail extends WalkSummary {
 	description: string | null;
 	accessibility: string | null;

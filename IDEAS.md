@@ -34,11 +34,14 @@ Things considered but not built yet, with what we learned. Roughly in order of v
   next to the numbered stages. Ingest them as standalone walks when they start near a station.
 - **Trage Tochten and Klompenpaden** used to be on Wandelnet; `/trage-tochten` and `/klompenpaden` now 404.
   Find where they live now (maybe via `/wandelroute-zoeken`).
-- **Sparse streekpaden/LAW stretches.** Sections need a station within 1.5 km of the path at both ends
-  and 8–26 km between them. Some paths give nothing or little: Drenthepad, Twentepad (Almelo → Oldenzaal
-  is 72 km), Pionierspad (skirts Lelystad/Almere), Grenslandpad, Noaberpad, Dwars door Brabant (misses
-  Etten-Leur station by just over 1.5 km), Kustpad deel 1, WaddenWandelen. Options: a longer approach
-  walk (counted in the distance), or bus legs to village ends like the NS walks have.
+- **Sparse streekpaden/LAW stretches.** The pre-cut sections need a station within 1.5 km of the path at
+  both ends and 8–26 km between them. Some paths give nothing or little: Drenthepad, Twentepad (Almelo →
+  Oldenzaal is 72 km), Pionierspad (skirts Lelystad/Almere), Grenslandpad, Noaberpad, Kustpad deel 1,
+  WaddenWandelen. **Done (2026-10-19):** the route planner ("Route" filter, `src/lib/path.ts`) offers every
+  station within 2 km (catches Etten-Leur on Dwars door Brabant) and any pair of them. Stage ends far from a
+  station that a bus serves both ways are stops too (`path_bus_stop`, found by `ingest:gtfs`). Open: stage
+  ends with only a buurtbus or a bus on schooldays (below the 20 rides each way threshold), and the
+  middle of long stages, where only a taxi helps.
 - **Retired paths:** Streekpad Rijk van Nijmegen's stage pages and GPX are gone (404).
 - **Other curated sources**, all personal-use only: Routes in Utrecht (Plaece/Ubase; GPX at
   `api.ubase.nl/route/download/{id}/gpx`), Natuurmonumenten and Staatsbosbeheer (GPX per route).

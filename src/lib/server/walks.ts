@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { Collection, WalkDetail, WalkPhoto, WalkSource, WalkSummary } from '../types';
+import { plannedWalk } from './paths';
 
 /* Row shape shared by the summary and detail queries. */
 interface WalkRow {
@@ -96,10 +97,11 @@ export function listWalks(db: DatabaseSync, user: string | null) {
 	return rows.map(toSummary);
 }
 
+/** A walk the ingest made (or you kept), or else a stretch of a path planned on request. */
 export function getWalk(db: DatabaseSync, id: string, user: string | null): WalkDetail | null {
 	const r = db.prepare(`${SELECT} where w.id = ? and ${visibleTo(user)}`).get(user ?? '', id) as
 		(WalkRow & Record<string, string | null>) | undefined;
-	if (!r) return null;
+	if (!r) return plannedWalk(db, id, user);
 	const photos = db
 		.prepare('select url, caption, source from walk_photos where walk_id = ? order by sort')
 		.all(id) as unknown as WalkPhoto[];

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { initSchema } from './db';
-import { feederRides, serviceTime } from './feeders';
+import { feederKeys, feederRides, serviceTime } from './feeders';
 
 describe('serviceTime', () => {
 	it('turns GTFS seconds into Amsterdam time, summer and winter', () => {
@@ -39,5 +39,20 @@ describe('feederRides', () => {
 
 	it('gives an empty list on a day without service', () => {
 		expect(feederRides(db, 'w:1', '2026-10-17').end).toEqual([]);
+	});
+});
+
+describe('feederKeys', () => {
+	it('keeps a walk’s own rides under its own id', () => {
+		expect(feederKeys('wandelnet:123')).toEqual({ start: 'wandelnet:123', end: 'wandelnet:123' });
+		expect(feederKeys('pad:pieterpad-deel-1:GN-HRN').end).toBe('pad:pieterpad-deel-1:GN-HRN');
+	});
+
+	it('takes a stage end’s rides for a stretch that starts or ends there', () => {
+		expect(feederKeys('pad:pieterpad-deel-1:e2-e4')).toEqual({
+			start: 'pad:pieterpad-deel-1:e2',
+			end: 'pad:pieterpad-deel-1:e4'
+		});
+		expect(feederKeys('pad:pieterpad-deel-1:GN-e3').end).toBe('pad:pieterpad-deel-1:e3');
 	});
 });

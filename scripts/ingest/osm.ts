@@ -6,6 +6,8 @@
  * - LAW routes (network=nwn) and streekpaden (rwn) are mapped stage by stage; like ../ingest/paden.ts we
  *   join the stages and cut the line into sections between stations.
  * - Local walks (lwn): round walks that pass a station start there; others are cut like a path.
+ * - LAW routes and streekpaden are also kept whole, so the app can plan any stretch between two
+ *   stations they pass (src/lib/path.ts).
  * - NS-wandelingen are skipped (see isNsWalk), and so are knooppunt links and side branches.
  *
  * The routes come from Geofabrik's extract of the Netherlands, filtered with osmium (see
@@ -30,11 +32,20 @@ import {
 	chainStages,
 	DEFAULT_SECTION,
 	pickSections,
+	plannerLine,
 	sectionKm,
 	stationHits,
 	type SectionOptions
 } from '../lib/sections';
-import { pruneStale, recordFetched, saveWalk, type WalkRecord } from '../lib/store';
+import {
+	prunePaths,
+	pruneStale,
+	recordFetched,
+	savePath,
+	saveWalk,
+	type PathRecord,
+	type WalkRecord
+} from '../lib/store';
 
 /** How far a station may be from the route: this bit is walked extra, to/from the platform. */
 const STATION_RANGE_M = 1500;
@@ -86,6 +97,22 @@ async function main() {
 		).map((r) => JSON.parse(r.geometry))
 	);
 	let duplicates = 0;
+	// The same for whole paths: an OSM path over Wandelnet's ground is planned on Wandelnet's copy.
+	const onWandelnetPath = routeIndex(
+		(
+			db.prepare(`select lines from paths where source = 'wandelnet'`).all() as { lines: string }[]
+		).flatMap((r) => JSON.parse(r.lines))
+	);
+	const seenPaths = new Set<string>();
+	const keepPath = (p: Omit<PathRecord, 'source' | 'wandelnetDuplicate'>) => {
+		if (seenPaths.has(p.id) || !p.lines.length) return;
+		savePath(db, {
+			...p,
+			source: 'osm',
+			wandelnetDuplicate: onWandelnetPath(p.lines.flat()) >= DUPLICATE_SHARE
+		});
+		seenPaths.add(p.id);
+	};
 	const save = (w: Omit<WalkRecord, 'source' | 'sourceId' | 'startPlace' | 'endPlace'>) => {
 		if (seen.has(w.id)) return;
 		const wandelnetDuplicate = onWandelnetGround(w.track) >= DUPLICATE_SHARE;
@@ -143,6 +170,27 @@ async function main() {
 	for (const path of paths.values()) {
 		path.stages.sort((a, b) => a.n - b.n);
 		const chains = chainStages(path.stages.map((s) => ({ data: s, track: s.track })));
+		const planner = chains.map((chain, n) =>
+			plannerLine(
+				chain,
+				path.stages.map((s) => ({
+					number: s.n,
+					places: s.rel.tags.from && s.rel.tags.to ? `${s.rel.tags.from} – ${s.rel.tags.to}` : null,
+					url: relationUrl(s.rel.id)
+				})),
+				stations,
+				n
+			)
+		);
+		keepPath({
+			id: `osm:${slug(path.name)}`,
+			collection: path.collection,
+			name: path.name,
+			lines: planner.map((p) => p.line),
+			stops: planner.flatMap((p) => p.stops),
+			stages: planner.flatMap((p) => p.stages),
+			sourceUrl: relationUrl(path.stages[0].rel.id)
+		});
 		for (const chain of chains)
 			for (const [a, b] of pickSections(stationHits(chain.path, stations, STATION_RANGE_M))) {
 				const used = [...new Set(chain.stageOf.slice(a.index, b.index + 1))].map(
@@ -174,67 +222,82 @@ async function main() {
 	let loops = 0;
 	let cut = 0;
 	for (const { rel, collection } of singles) {
-		stitch(rel)
-			.filter((line) => lineLengthKm(line) >= 3)
-			.forEach((line, part) => {
-				const suffix = part ? `-${part}` : '';
-				if (isClosed(line) || (rel.tags.roundtrip === 'yes' && isClosed(line, 1000))) {
-					const hit = stationHits(line, stations, STATION_RANGE_M).reduce<
-						ReturnType<typeof stationHits>[number] | null
-					>((a, b) => (!a || b.metres < a.metres ? b : a), null);
-					if (!hit) return;
-					const km = lineLengthKm(line) + (2 * hit.metres) / 1000;
-					if (km < LOOP_KM.min || km > LOOP_KM.max) return;
-					save({
-						...common,
-						id: `osm:${rel.id}${suffix}`,
-						collection,
-						name: rel.tags.name,
-						startStation: hit.code,
-						endStation: hit.code,
-						startStationM: Math.round(hit.metres),
-						endStationM: Math.round(hit.metres),
-						isLoop: true,
-						distanceKm: Math.round(km * 10) / 10,
-						description: about(rel.tags),
-						track: rotateLoop(line, hit.index),
-						sourceUrl: relationUrl(rel.id)
-					});
-					loops++;
-					return;
-				}
-				const opts = collection === 'lokaal' ? LOCAL_SECTION : DEFAULT_SECTION;
-				const hits = stationHits(line, stations, STATION_RANGE_M);
-				for (const [a, b] of pickSections(hits, opts)) {
-					const whole = hits.length === 2 && hits[0] === a && hits[1] === b;
-					save({
-						...common,
-						id: `osm:${rel.id}${suffix}:${a.code}-${b.code}`,
-						collection,
-						name: whole
-							? rel.tags.name
-							: `${rel.tags.name}: ${stationName(a.code)} – ${stationName(b.code)}`,
-						startStation: a.code,
-						endStation: b.code,
-						startStationM: Math.round(a.metres),
-						endStationM: Math.round(b.metres),
-						isLoop: false,
-						distanceKm: Math.round(sectionKm(a, b) * 10) / 10,
-						description: about(rel.tags),
-						track: line.slice(a.index, b.index + 1),
-						sourceUrl: relationUrl(rel.id)
-					});
-					cut++;
-				}
+		const lines = stitch(rel).filter((line) => lineLengthKm(line) >= 3);
+		if (collection !== 'lokaal') {
+			const planner = lines.map((line, n) =>
+				plannerLine({ path: line, stageOf: line.map(() => 0) }, [], stations, n)
+			);
+			keepPath({
+				id: `osm:${rel.id}`,
+				collection,
+				name: rel.tags.name,
+				lines: planner.map((p) => p.line),
+				stops: planner.flatMap((p) => p.stops),
+				stages: [],
+				sourceUrl: relationUrl(rel.id)
 			});
+		}
+		lines.forEach((line, part) => {
+			const suffix = part ? `-${part}` : '';
+			if (isClosed(line) || (rel.tags.roundtrip === 'yes' && isClosed(line, 1000))) {
+				const hit = stationHits(line, stations, STATION_RANGE_M).reduce<
+					ReturnType<typeof stationHits>[number] | null
+				>((a, b) => (!a || b.metres < a.metres ? b : a), null);
+				if (!hit) return;
+				const km = lineLengthKm(line) + (2 * hit.metres) / 1000;
+				if (km < LOOP_KM.min || km > LOOP_KM.max) return;
+				save({
+					...common,
+					id: `osm:${rel.id}${suffix}`,
+					collection,
+					name: rel.tags.name,
+					startStation: hit.code,
+					endStation: hit.code,
+					startStationM: Math.round(hit.metres),
+					endStationM: Math.round(hit.metres),
+					isLoop: true,
+					distanceKm: Math.round(km * 10) / 10,
+					description: about(rel.tags),
+					track: rotateLoop(line, hit.index),
+					sourceUrl: relationUrl(rel.id)
+				});
+				loops++;
+				return;
+			}
+			const opts = collection === 'lokaal' ? LOCAL_SECTION : DEFAULT_SECTION;
+			const hits = stationHits(line, stations, STATION_RANGE_M);
+			for (const [a, b] of pickSections(hits, opts)) {
+				const whole = hits.length === 2 && hits[0] === a && hits[1] === b;
+				save({
+					...common,
+					id: `osm:${rel.id}${suffix}:${a.code}-${b.code}`,
+					collection,
+					name: whole
+						? rel.tags.name
+						: `${rel.tags.name}: ${stationName(a.code)} – ${stationName(b.code)}`,
+					startStation: a.code,
+					endStation: b.code,
+					startStationM: Math.round(a.metres),
+					endStationM: Math.round(b.metres),
+					isLoop: false,
+					distanceKm: Math.round(sectionKm(a, b) * 10) / 10,
+					description: about(rel.tags),
+					track: line.slice(a.index, b.index + 1),
+					sourceUrl: relationUrl(rel.id)
+				});
+				cut++;
+			}
+		});
 	}
 
 	recordFetched(db, 'osm', dataFrom);
 	const pruned = pruneStale(db, ['law', 'streekpad', 'lokaal'], seen, 'osm');
+	const prunedPaths = prunePaths(db, 'osm', seenPaths);
 	console.log(
 		`Stored ${seen.size} walks (${fromPaths} from ${paths.size} staged paths, ${loops} round walks, ` +
 			`${cut} other sections, ${duplicates} also in Wandelnet's data); skipped ${skipped} routes (NS walks, other networks)` +
-			`${pruned ? `; removed ${pruned} stale` : ''}.`
+			`${pruned ? `; removed ${pruned} stale` : ''}. ${seenPaths.size} paths to plan your own stretches on` +
+			`${prunedPaths ? ` (removed ${prunedPaths})` : ''}.`
 	);
 }
 

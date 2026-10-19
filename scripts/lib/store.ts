@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { transaction } from '../../src/lib/server/db';
-import { simplify, type LngLat } from '../../src/lib/geo';
-import type { Collection, WalkSource } from '../../src/lib/types';
+import { lineLengthKm, simplify, type LngLat } from '../../src/lib/geo';
+import type { Collection, PathStage, PathStop, WalkSource } from '../../src/lib/types';
 
 export interface WalkRecord {
 	id: string;
@@ -127,4 +127,47 @@ export function pruneStale(
 	const del = db.prepare('delete from walks where id = ?');
 	transaction(db, () => stale.forEach((r) => del.run(r.id)));
 	return stale.length;
+}
+
+export interface PathRecord {
+	id: string;
+	source: WalkSource;
+	collection: Collection;
+	name: string;
+	/** Already simplified (see plannerLine), so the stops' indices point into them. */
+	lines: LngLat[][];
+	stops: PathStop[];
+	stages: PathStage[];
+	sourceUrl: string;
+	wandelnetDuplicate?: boolean;
+}
+
+/** A whole path, for planning your own stretches of it (src/lib/path.ts). */
+export function savePath(db: DatabaseSync, p: PathRecord) {
+	db.prepare(
+		`insert or replace into paths (id, source, collection, name, km, lines, stops, stages, source_url,
+			wandelnet_duplicate, updated_at)
+		 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+	).run(
+		p.id,
+		p.source,
+		p.collection,
+		p.name,
+		Math.round(p.lines.reduce((sum, l) => sum + lineLengthKm(l), 0) * 10) / 10,
+		JSON.stringify(p.lines),
+		JSON.stringify(p.stops),
+		JSON.stringify(p.stages),
+		p.sourceUrl,
+		p.wandelnetDuplicate ? 1 : 0
+	);
+}
+
+/** Remove paths from `source` that this run no longer produced. */
+export function prunePaths(db: DatabaseSync, source: WalkSource, keepIds: Set<string>) {
+	const ids = (db.prepare('select id from paths where source = ?').all(source) as { id: string }[])
+		.map((r) => r.id)
+		.filter((id) => !keepIds.has(id));
+	const del = db.prepare('delete from paths where id = ?');
+	transaction(db, () => ids.forEach((id) => del.run(id)));
+	return ids.length;
 }
