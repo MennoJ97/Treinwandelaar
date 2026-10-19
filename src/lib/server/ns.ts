@@ -12,6 +12,30 @@ export class NsApiError extends Error {
 	}
 }
 
+// --- Keeping trip_cache small ----------------------------------------------------------------------
+
+/** How often expired cache rows are deleted, at most. A new client per request: so module-level. */
+const PRUNE_EVERY_SECONDS = 600;
+let lastPrune = 0;
+
+/** Delete the cache rows past their TTL; returns how many went. Uses the expires_at index. */
+export function pruneTripCache(db: DatabaseSync, now = Math.floor(Date.now() / 1000)): number {
+	return Number(db.prepare('delete from trip_cache where expires_at < ?').run(now).changes);
+}
+
+/** After a write, at most every 10 minutes (so also on the first write after a start), off the request. */
+function schedulePrune(db: DatabaseSync, now: number) {
+	if (now - lastPrune < PRUNE_EVERY_SECONDS) return;
+	lastPrune = now;
+	setImmediate(() => {
+		try {
+			pruneTripCache(db);
+		} catch (err) {
+			console.warn('trip_cache prune failed:', (err as Error).message);
+		}
+	});
+}
+
 /* eslint-disable @typescript-eslint/no-explicit-any -- NS responses are loosely typed; mapped defensively below */
 
 export class NsClient {
@@ -49,8 +73,11 @@ export class NsClient {
 		if (hit && now - hit.fetched_at < ttlSeconds) return JSON.parse(hit.json);
 		const data = await this.get(path, params);
 		this.db
-			.prepare('insert or replace into trip_cache (key, json, fetched_at) values (?, ?, ?)')
-			.run(key, JSON.stringify(data), now);
+			.prepare(
+				'insert or replace into trip_cache (key, json, fetched_at, expires_at) values (?, ?, ?, ?)'
+			)
+			.run(key, JSON.stringify(data), now, now + ttlSeconds);
+		schedulePrune(this.db, now);
 		return data;
 	}
 

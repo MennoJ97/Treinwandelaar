@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import { db, ns } from '#lib/server/context.js';
 import { NsApiError, type NsClient } from '#lib/server/ns.js';
+import { allowNsFallback } from '#lib/server/nsFallback.js';
 import { fastestRoutes, fastestRoutesHome, loadDay, type Route } from '#lib/server/railRouter.js';
 import {
 	activeOn,
@@ -21,9 +22,10 @@ import type { RequestHandler } from './$types';
  *
  * Travel times come from the GTFS timetable (offline, a few ms) when it covers the date; the
  * planned works it already contains (replacement buses, diversions) are in those times. Only for
- * dates outside the timetable do we fall back to asking NS per station (rate-limited, slow).
+ * dates outside the timetable do we fall back to asking NS per station (rate-limited, slow), and only
+ * for signed-in users: see allowNsFallback.
  */
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
 	const from = url.searchParams.get('from');
 	if (!from) error(400, 'from is required');
 	const date = url.searchParams.get('date') ?? nextSaturdayMorning().slice(0, 10);
@@ -41,6 +43,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	const client = ns();
 	const day = loadDay(conn, date);
+	if (!day) allowNsFallback(conn, from, date, locals.user);
 	const response: ReachabilityResponse = day
 		? { date, source: 'timetable', times: {}, back: {}, disruptions: {}, incomplete: false }
 		: await fromNs(client, from, codes, date);

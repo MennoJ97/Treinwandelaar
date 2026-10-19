@@ -103,7 +103,9 @@
 	let disruptions = $state<Record<string, Disruption>>({});
 	let closed = $state<Record<string, string[]>>({});
 	let reachSource = $state<'timetable' | 'ns'>('timetable');
-	let reachStatus = $state<'idle' | 'loading' | 'error' | 'incomplete'>('idle');
+	let reachStatus = $state<'idle' | 'loading' | 'error' | 'incomplete' | 'refused'>('idle');
+	/** Why the server won't ask NS for this day (a 4xx for a day outside the timetable). */
+	let reachRefusal = $state<{ status: number; message: string } | null>(null);
 
 	$effect(() => {
 		const controller = new AbortController();
@@ -113,9 +115,17 @@
 		disruptions = {};
 		closed = {};
 		reachStatus = 'loading';
+		reachRefusal = null;
 		const params = new URLSearchParams({ from: home, date: day });
 		fetch(`/api/reachability?${params}`, { signal: controller.signal })
-			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+			.then(async (r) => {
+				if (r.ok) return r.json();
+				if (r.status === 400 || r.status === 403) {
+					const body = await r.json().catch(() => ({}));
+					reachRefusal = { status: r.status, message: body.message ?? `HTTP ${r.status}` };
+				}
+				throw new Error(`HTTP ${r.status}`);
+			})
 			.then((r: ReachabilityResponse) => {
 				reachability = r.times;
 				reachBack = r.back;
@@ -125,7 +135,7 @@
 				reachStatus = r.incomplete ? 'incomplete' : 'idle';
 			})
 			.catch(() => {
-				if (!controller.signal.aborted) reachStatus = 'error';
+				if (!controller.signal.aborted) reachStatus = reachRefusal ? 'refused' : 'error';
 			});
 		return () => controller.abort();
 	});
@@ -605,6 +615,11 @@
 				<p class="notice">
 					Nog niet alle reistijden: de NS-limiet (300 verzoeken per 5 minuten) is bereikt. Herlaad
 					over een paar minuten; wat al binnen is, blijft bewaard.
+				</p>
+			{:else if reachStatus === 'refused' && reachRefusal}
+				<p class="notice">
+					{reachRefusal.message}
+					{#if reachRefusal.status === 403}<a href="/login" data-sveltekit-reload>Inloggen</a>{/if}
 				</p>
 			{:else if reachStatus === 'error'}
 				<p class="notice">
