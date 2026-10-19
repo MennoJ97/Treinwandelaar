@@ -234,7 +234,6 @@
 	let filtersOpen = $state(false);
 	const activeFilters = $derived(
 		[
-			!!routeId,
 			maxTravel < 180,
 			maxKm < 25,
 			shown.length < collections.filter((c) => countBy[c]).length,
@@ -493,6 +492,25 @@
 				</p>
 			{/if}
 
+			<!-- Outside the filters, which fold away on a phone: planning on a route is a way in, not a filter. -->
+			{#if data.paths.length}
+				<label class="route-pick">
+					<span>Etappes plannen</span>
+					<select value={routeId ?? ''} onchange={(e) => pickRoute(e.currentTarget.value)}>
+						<option value="">kies een LAW-route of streekpad</option>
+						{#each routeGroups as group (group.label)}
+							{#if group.paths.length}
+								<optgroup label={group.label}>
+									{#each group.paths as p (p.id)}
+										<option value={p.id}>{p.name}</option>
+									{/each}
+								</optgroup>
+							{/if}
+						{/each}
+					</select>
+				</label>
+			{/if}
+
 			<button
 				type="button"
 				class="filters-toggle"
@@ -530,23 +548,6 @@
 					<input type="range" min="8" max="25" step="1" bind:value={maxKm} />
 					<output class="tabular">{maxKm >= 25 ? 'alles' : `${maxKm} km`}</output>
 				</label>
-				{#if data.paths.length}
-					<label class="route">
-						<span>Route</span>
-						<select value={routeId ?? ''} onchange={(e) => pickRoute(e.currentTarget.value)}>
-							<option value="">alle wandelingen</option>
-							{#each routeGroups as group (group.label)}
-								{#if group.paths.length}
-									<optgroup label={group.label}>
-										{#each group.paths as p (p.id)}
-											<option value={p.id}>{p.name}</option>
-										{/each}
-									</optgroup>
-								{/if}
-							{/each}
-						</select>
-					</label>
-				{/if}
 				{#if !routeId}
 					<div class="kinds" role="group" aria-label="Soort wandeling">
 						{#each collections as c (c)}
@@ -833,6 +834,27 @@
 		padding: 18px 20px 6px;
 	}
 
+	.route-pick {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		align-items: center;
+		gap: 10px;
+		margin: 8px 20px 4px;
+		color: var(--muted);
+		font-size: var(--step--1);
+	}
+
+	/* As big as the filters bar under it: on a phone it's tapped. */
+	.route-pick select {
+		min-width: 0;
+		padding: 7px 8px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+		background: var(--surface);
+		color: var(--ink);
+		font: inherit;
+	}
+
 	.filters {
 		display: grid;
 		gap: 8px;
@@ -970,8 +992,7 @@
 	}
 
 	.filters input.day,
-	.sort select,
-	.route select {
+	.sort select {
 		grid-column: 2 / 4;
 		min-width: 0;
 		padding: 2px 4px;
