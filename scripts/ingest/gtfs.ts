@@ -282,9 +282,58 @@ function stageEnds(db: DatabaseSync): StageEnd[] {
 /** Bump when what loadFeeders stores changes, so the next run reloads the rides (2: their geometry). */
 const FEEDER_FORMAT = 2;
 
+/**
+ * The same string, kept once: CSV fields are new strings on every row, and a long one (a headsign) is
+ * a slice that keeps its whole line alive, so hundreds of thousands of trips repeating a few thousand
+ * values would each hold their own copy.
+ */
+function interner(): (s: string) => string {
+	const seen = new Map<string, string>();
+	return (s) => {
+		const kept = seen.get(s);
+		if (kept !== undefined) return kept;
+		seen.set(s, s);
+		return s;
+	};
+}
+
+interface Trip {
+	route: string;
+	service: string;
+	headsign: string;
+	shape: string;
+}
+
+/**
+ * The bus, tram, metro and ferry trips that call at one of `endStops`: a pass over stop_times for
+ * their ids, then trips.txt for just those. Most of the feed's ~900k trips never come near an end.
+ */
+async function tripsCalling(
+	endStops: Set<string>,
+	routes: Map<string, unknown>,
+	intern: (s: string) => string
+): Promise<Map<string, Trip>> {
+	const calling = new Set<string>();
+	await eachRow(ZIP_PATH, 'stop_times.txt', (r) => {
+		if (endStops.has(r.stop_id)) calling.add(r.trip_id);
+	});
+	const trips = new Map<string, Trip>();
+	await eachRow(ZIP_PATH, 'trips.txt', (r) => {
+		if (routes.has(r.route_id) && calling.has(r.trip_id))
+			trips.set(r.trip_id, {
+				route: intern(r.route_id),
+				service: intern(r.service_id),
+				headsign: intern(r.trip_headsign),
+				shape: intern(r.shape_id)
+			});
+	});
+	return trips;
+}
+
 /** The stop_times rows `keep` accepts, grouped by trip. */
 async function stopTimesByTrip(
-	keep: (row: Record<string, string>) => boolean
+	keep: (row: Record<string, string>) => boolean,
+	intern: (s: string) => string
 ): Promise<Map<string, StopTime[]>> {
 	const byTrip = new Map<string, StopTime[]>();
 	await eachRow(ZIP_PATH, 'stop_times.txt', (r) => {
@@ -292,7 +341,7 @@ async function stopTimesByTrip(
 		let list = byTrip.get(r.trip_id);
 		if (!list) byTrip.set(r.trip_id, (list = []));
 		list.push({
-			stopId: r.stop_id,
+			stopId: intern(r.stop_id),
 			seq: Number(r.stop_sequence),
 			arr: gtfsTime(r.arrival_time),
 			dep: gtfsTime(r.departure_time),
@@ -305,9 +354,36 @@ async function stopTimesByTrip(
 }
 
 /**
- * Feeder rides for every far route end and every stage end a bus serves. Streams stop_times twice,
- * keeping only the stops near those ends and near stations (a few thousand of the ~60k): first to find
- * the trips that call near an end, then for those trips' calls near a station.
+ * Where rides run: a stretch of a trip's shape between the distances along it of the stops you board
+ * and leave at, else (or where the shape can't be cut there) from stop to stop. Rides on the same
+ * stretch share one way.
+ */
+interface Way {
+	shape: string | null;
+	from: number;
+	to: number;
+	stops: LngLat[];
+}
+
+type FeederRow = [
+	walkId: string,
+	side: string,
+	tripId: number,
+	service: string,
+	line: string,
+	operator: string | null,
+	headsign: string,
+	board: string,
+	alight: string,
+	dep: number,
+	arr: number,
+	stopM: number,
+	way: number
+];
+
+/**
+ * Feeder rides for every far route end and every stage end a bus serves. Finds the rides first, then
+ * where they run, so the timetable is gone from memory before the shapes are read.
  */
 async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 	const ends = feederEnds(db);
@@ -325,6 +401,57 @@ async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 	}
 
 	const t0 = Date.now();
+	const { rows, ways, services, busStops } = await findRides(db, ends, stages);
+	const geometry = await wayGeometries(ways);
+
+	const serviceDates: [string, string][] = [];
+	await eachRow(ZIP_PATH, 'calendar_dates.txt', (r) => {
+		if (r.exception_type === '1' && services.has(r.service_id))
+			serviceDates.push([r.service_id, r.date]);
+	});
+
+	transaction(db, () => {
+		db.exec(
+			'delete from feeder_trip; delete from feeder_geometry; delete from feeder_service_date; ' +
+				'delete from path_bus_stop;'
+		);
+		const insGeometry = db.prepare('insert into feeder_geometry (id, geometry) values (?, ?)');
+		geometry.lines.forEach((line, i) => insGeometry.run(i + 1, line));
+		const insTrip = db.prepare(
+			`insert or ignore into feeder_trip (walk_id, side, trip_id, service_id, line, operator, headsign,
+				board, alight, dep, arr, stop_m, geometry_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		);
+		for (const row of rows) {
+			const line = geometry.byWay[row[12]];
+			insTrip.run(...row.slice(0, 12), line === null ? null : line + 1);
+		}
+		const insDate = db.prepare(
+			'insert or ignore into feeder_service_date (service_id, date) values (?, ?)'
+		);
+		for (const [s, d] of serviceDates) insDate.run(s, d);
+		const insStop = db.prepare(
+			`insert or replace into path_bus_stop (path_id, key, place, station, line, idx, km, metres)
+			 values (?, ?, ?, ?, ?, ?, ?, ?)`
+		);
+		for (const b of busStops)
+			insStop.run(b.pathId, b.key, b.place, b.station, b.line, b.index, b.km, b.metres);
+		db.prepare(`insert or replace into meta (key, value) values ('feeder_signature', ?)`).run(
+			signature
+		);
+	});
+	console.log(
+		`Loaded ${rows.length} feeder rides for ${ends.length} route ends and ${busStops.length} of ` +
+			`${stages.length} stage ends away from a station, running ${geometry.lines.length} ways ` +
+			`(${geometry.alongShape} of them along a shape), in ${((Date.now() - t0) / 1000).toFixed(0)} s.`
+	);
+}
+
+/**
+ * The rides between each end and its station, and where each runs. Streams stop_times three times,
+ * keeping only what's needed: the trips that call near an end, then those trips' calls near an end or
+ * a station (a few thousand of the ~60k stops).
+ */
+async function findRides(db: DatabaseSync, ends: FeederEnd[], stages: StageEnd[]) {
 	const stops: Stop[] = [];
 	await eachRow(ZIP_PATH, 'stops.txt', (r) => {
 		if (r.location_type && r.location_type !== '0') return; // stations/entrances, not stops
@@ -370,28 +497,14 @@ async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 			operator: operators.get(r.agency_id) ?? null
 		});
 	});
-	const trips = new Map<
-		string,
-		{ route: string; service: string; headsign: string; shape: string }
-	>();
-	await eachRow(ZIP_PATH, 'trips.txt', (r) => {
-		if (routes.has(r.route_id))
-			trips.set(r.trip_id, {
-				route: r.route_id,
-				service: r.service_id,
-				headsign: r.trip_headsign,
-				shape: r.shape_id
-			});
-	});
-
-	const calling = new Set(
-		(await stopTimesByTrip((r) => endStops.has(r.stop_id) && trips.has(r.trip_id))).keys()
-	);
+	const intern = interner();
+	const trips = await tripsCalling(endStops, routes, intern);
 	// Calls we can't place on a shape are kept all, to draw those rides from stop to stop instead.
 	const byTrip = await stopTimesByTrip(
 		(r) =>
-			calling.has(r.trip_id) &&
-			(wanted.has(r.stop_id) || !trips.get(r.trip_id)!.shape || !r.shape_dist_traveled)
+			trips.has(r.trip_id) &&
+			(wanted.has(r.stop_id) || !trips.get(r.trip_id)!.shape || !r.shape_dist_traveled),
+		intern
 	);
 	/** Per stop near a route end, the trips calling there. */
 	const tripsAt = new Map<string, string[]>();
@@ -406,24 +519,29 @@ async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 		...new Set([...route.keys()].flatMap((id) => tripsAt.get(id) ?? []))
 	];
 
-	type Row = [
-		string,
-		string,
-		number,
-		string,
-		string,
-		string | null,
-		string,
-		string,
-		string,
-		number,
-		number,
-		number
-	];
-	const rows: Row[] = [];
-	/** Per row, the trip and its stops there, to find where it runs. */
-	const rides: (Pick<Ride, 'board' | 'alight'> & { tripId: string })[] = [];
+	const rows: FeederRow[] = [];
+	const ways: Way[] = [];
+	const wayIndex = new Map<string, number>(); // shape and distances, or trip and stops → way
 	const services = new Set<string>();
+	/** The way a ride runs, as an index into `ways`. */
+	function wayOf(tripId: string, ride: Pick<Ride, 'board' | 'alight'>) {
+		const shape = trips.get(tripId)!.shape;
+		const shaped = shape && ride.board.dist !== undefined && ride.alight.dist !== undefined;
+		const key = shaped
+			? `${shape}:${ride.board.dist}:${ride.alight.dist}`
+			: `${tripId}:${ride.board.seq}:${ride.alight.seq}`;
+		let i = wayIndex.get(key);
+		if (i === undefined) {
+			wayIndex.set(key, (i = ways.length));
+			ways.push({
+				shape: shaped ? shape : null,
+				from: ride.board.dist ?? NaN,
+				to: ride.alight.dist ?? NaN,
+				stops: stopsLine(byTrip.get(tripId)!, ride, stopAt)
+			});
+		}
+		return i;
+	}
 	/** The rides one trip offers between a route end and its station, as rows; how many. */
 	function addRides(
 		walkId: string,
@@ -452,9 +570,9 @@ async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 					stopName.get(ride.alight.stopId) ?? '?',
 					ride.board.dep,
 					ride.alight.arr,
-					ride.stopM
+					ride.stopM,
+					wayOf(tripId, ride)
 				]);
-				rides.push({ tripId, board: ride.board, alight: ride.alight });
 				count++;
 			}
 		return count;
@@ -485,89 +603,59 @@ async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 		const place = end.place ?? stopName.get(nearest)?.split(',')[0].trim() ?? '?';
 		busStops.push({ ...end, place, station: choice.code, metres });
 	}
-
-	const geometry = await rideGeometries(
-		rides,
-		(tripId) => trips.get(tripId)!.shape,
-		byTrip,
-		stopAt
-	);
-
-	const serviceDates: [string, string][] = [];
-	await eachRow(ZIP_PATH, 'calendar_dates.txt', (r) => {
-		if (r.exception_type === '1' && services.has(r.service_id))
-			serviceDates.push([r.service_id, r.date]);
-	});
-
-	transaction(db, () => {
-		db.exec(
-			'delete from feeder_trip; delete from feeder_geometry; delete from feeder_service_date; ' +
-				'delete from path_bus_stop;'
-		);
-		const insGeometry = db.prepare('insert into feeder_geometry (id, geometry) values (?, ?)');
-		geometry.lines.forEach((line, i) => insGeometry.run(i + 1, line));
-		const insTrip = db.prepare(
-			`insert or ignore into feeder_trip (walk_id, side, trip_id, service_id, line, operator, headsign,
-				board, alight, dep, arr, stop_m, geometry_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-		);
-		rows.forEach((row, i) => {
-			const line = geometry.byRide[i];
-			insTrip.run(...row, line === null ? null : line + 1);
-		});
-		const insDate = db.prepare(
-			'insert or ignore into feeder_service_date (service_id, date) values (?, ?)'
-		);
-		for (const [s, d] of serviceDates) insDate.run(s, d);
-		const insStop = db.prepare(
-			`insert or replace into path_bus_stop (path_id, key, place, station, line, idx, km, metres)
-			 values (?, ?, ?, ?, ?, ?, ?, ?)`
-		);
-		for (const b of busStops)
-			insStop.run(b.pathId, b.key, b.place, b.station, b.line, b.index, b.km, b.metres);
-		db.prepare(`insert or replace into meta (key, value) values ('feeder_signature', ?)`).run(
-			signature
-		);
-	});
-	console.log(
-		`Loaded ${rows.length} feeder rides for ${ends.length} route ends and ${busStops.length} of ` +
-			`${stages.length} stage ends away from a station, running ${geometry.lines.length} ways ` +
-			`(${geometry.alongShape} of them along a shape), in ${((Date.now() - t0) / 1000).toFixed(0)} s.`
-	);
+	return { rows, ways, services, busStops };
 }
 
 /**
- * Where each ride runs, from the stop you board at to the one you get off at: along its trip's shape
- * where the feed has one, else from stop to stop. Rides that take the same way share one line, so
- * the database holds each way once; `byRide` gives each ride's index into `lines` (JSON), or null.
+ * Each way as a line (JSON), shared where two ways come out the same: `byWay` gives each way's index
+ * into `lines`, or null. shapes.txt is a quarter of a gigabyte and a ride runs a few km of a line that
+ * may run for fifty, so of each shape only the stretch the ways need is kept, as plain numbers, with
+ * the point either side of it to cut there.
  */
-async function rideGeometries(
-	rides: (Pick<Ride, 'board' | 'alight'> & { tripId: string })[],
-	shapeOf: (tripId: string) => string,
-	byTrip: Map<string, StopTime[]>,
-	stopAt: Map<string, LngLat>
-): Promise<{ lines: string[]; byRide: (number | null)[]; alongShape: number }> {
-	const shapeKey = ({ tripId, board, alight }: (typeof rides)[number]) =>
-		shapeOf(tripId) && board.dist !== undefined && alight.dist !== undefined
-			? shapeOf(tripId)
-			: null;
-	// shapes.txt is a quarter of a gigabyte: keep only the shapes the rides run along.
-	const shapes = new Map<string, (ShapePoint & { seq: number })[]>();
-	for (const ride of rides) {
-		const shape = shapeKey(ride);
-		if (shape) shapes.set(shape, []);
+async function wayGeometries(
+	ways: Way[]
+): Promise<{ lines: string[]; byWay: (number | null)[]; alongShape: number }> {
+	/** Per shape: the stretch needed, its points as [seq, lng, lat, dist] runs, and the two beside it. */
+	const shapes = new Map<
+		string,
+		{ from: number; to: number; points: number[]; before: number[] | null; after: number[] | null }
+	>();
+	for (const w of ways) {
+		if (!w.shape) continue;
+		const s = shapes.get(w.shape);
+		if (!s) shapes.set(w.shape, { from: w.from, to: w.to, points: [], before: null, after: null });
+		else [s.from, s.to] = [Math.min(s.from, w.from), Math.max(s.to, w.to)];
 	}
-	await eachRow(ZIP_PATH, 'shapes.txt', (r) =>
-		shapes.get(r.shape_id)?.push({
-			seq: Number(r.shape_pt_sequence),
-			at: [Number(r.shape_pt_lon), Number(r.shape_pt_lat)],
-			dist: r.shape_dist_traveled ? Number(r.shape_dist_traveled) : NaN
-		})
-	);
-	for (const points of shapes.values()) points.sort((a, b) => a.seq - b.seq);
+	await eachRow(ZIP_PATH, 'shapes.txt', (r) => {
+		const s = shapes.get(r.shape_id);
+		if (!s) return;
+		const p = [
+			Number(r.shape_pt_sequence),
+			Number(r.shape_pt_lon),
+			Number(r.shape_pt_lat),
+			r.shape_dist_traveled ? Number(r.shape_dist_traveled) : NaN
+		];
+		const [seq, , , dist] = p;
+		// The last point before the stretch and the first after it; a point without a distance stays,
+		// so cutShape still finds the shape can't be cut.
+		if (dist < s.from) {
+			if (!s.before || dist > s.before[3] || (dist === s.before[3] && seq > s.before[0]))
+				s.before = p;
+		} else if (dist > s.to) {
+			if (!s.after || dist < s.after[3] || (dist === s.after[3] && seq < s.after[0])) s.after = p;
+		} else s.points.push(...p);
+	});
+	const pointsOf = (shape: string): ShapePoint[] => {
+		const s = shapes.get(shape)!;
+		const flat = [...(s.before ?? []), ...s.points, ...(s.after ?? [])];
+		const points: (ShapePoint & { seq: number })[] = [];
+		for (let i = 0; i < flat.length; i += 4)
+			points.push({ seq: flat[i], at: [flat[i + 1], flat[i + 2]], dist: flat[i + 3] });
+		return points.sort((a, b) => a.seq - b.seq);
+	};
 
 	const lines: string[] = [];
 	const index = new Map<string, number>(); // JSON line → its index in `lines`
-	const ways = new Map<string, number | null>(); // shape and distances, or stops → index
 	let alongShape = 0;
 	const indexOf = (line: LngLat[], shaped: boolean) => {
 		if (line.length < 2) return null;
@@ -579,20 +667,16 @@ async function rideGeometries(
 		}
 		return i;
 	};
-	const byRide = rides.map((ride) => {
-		const shape = shapeKey(ride);
-		const key = shape
-			? `${shape}:${ride.board.dist}:${ride.alight.dist}`
-			: `${ride.tripId}:${ride.board.seq}:${ride.alight.seq}`;
-		if (ways.has(key)) return ways.get(key)!;
-		let i = shape
-			? indexOf(cutShape(shapes.get(shape)!, ride.board.dist!, ride.alight.dist!), true)
-			: null;
-		i ??= indexOf(stopsLine(byTrip.get(ride.tripId)!, ride, stopAt), false);
-		ways.set(key, i);
-		return i;
+	let cached: { shape: string; points: ShapePoint[] } | null = null;
+	const byWay = ways.map((w) => {
+		let i: number | null = null;
+		if (w.shape) {
+			if (cached?.shape !== w.shape) cached = { shape: w.shape, points: pointsOf(w.shape) };
+			i = indexOf(cutShape(cached.points, w.from, w.to), true);
+		}
+		return i ?? indexOf(w.stops, false);
 	});
-	return { lines, byRide, alongShape };
+	return { lines, byWay, alongShape };
 }
 
 /**
