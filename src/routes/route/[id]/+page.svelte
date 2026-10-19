@@ -27,6 +27,12 @@
 	const description = $derived(walkDescription(walk, walk.along));
 	const heading = $derived(walkHeading(walk));
 	const along = $derived(alongSentences(walk, walk.along));
+	const cardAlt = $derived(
+		`Route van ${heading}, ${formatKm(walk.distanceKm)} km, ` +
+			(walk.isLoop
+				? `rondje vanaf station ${walk.startStationName ?? walk.startPlace}`
+				: `van station ${walk.startStationName ?? walk.startPlace} naar station ${walk.endStationName ?? walk.endPlace}`)
+	);
 	const canonical = $derived(page.url.origin + walkPath(walk.id));
 	/** Search engines see what an anonymous visitor sees; a signed-in user's Wandelnet walk is not for them. */
 	const indexable = $derived(walk.source === 'osm');
@@ -62,6 +68,14 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:url" content={canonical} />
+	{#if data.card}
+		<!-- Versioned: link previews keep a card by its URL. Without one, the site's card
+		     (lib/template.ts) stands in. -->
+		<meta property="og:image" content="{canonical}/og.png?v={data.card}" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content={cardAlt} />
+	{/if}
 </svelte:head>
 
 <div class="page">

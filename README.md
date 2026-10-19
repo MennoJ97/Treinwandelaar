@@ -122,7 +122,12 @@ Each walk a visitor may see also has a page of its own, `/route/<walk id>`, with
 and stations as plain HTML for search engines, and `/route/` lists them all; `/sitemap.xml` names
 those pages, each with the day an ingest last changed the walk's data (`walks.changed_on`). What a
 walk passes (villages, nature areas, sights, forest/heath/dunes, paved or not) comes from the same
-OSM extract (`scripts/lib/context.ts`, stored in `walks.along`). They
+OSM extract (`scripts/lib/context.ts`, stored in `walks.along`).
+Each of those walks also gets a link-preview card with its route (og:image, `/route/<id>/og.png`):
+`ingest:osm` draws the ones that changed into `data/og/` next to the database (never in git) and
+deletes those of walks that are gone; `npm run ingest:cards` redraws them after a change to their
+design. They need Nimbus Sans (`fonts-urw-base35`, in the Docker image; elsewhere set
+`CARD_FONT_DIR`), and take the host for their bottom row from `ORIGIN` or `DOMAIN`. They
 follow the same rule as the map: without a session, only the OpenStreetMap walks.
 
 Visitors then get the demo, and the "Inloggen" link (`/login`) sends them through Authentik and back.

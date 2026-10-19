@@ -136,6 +136,17 @@ export function publicWalks(db: DatabaseSync): { id: string; changedOn: string |
 }
 
 /**
+ * The version of a walk's link-preview card (data/og/, drawn by the OSM ingest), or null when it has
+ * none. OpenStreetMap's walks only: the card shows the route to anyone who sees the link.
+ */
+export function walkCard(db: DatabaseSync, id: string): string | null {
+	const row = db
+		.prepare(`select og_card from walks w where w.id = ? and ${visibleTo(null)}`)
+		.get(id) as { og_card: string | null } | undefined;
+	return row?.og_card ?? null;
+}
+
+/**
  * For a walk's own page: the day walks of the path it is a stretch of, in path order (with that
  * path's name, and the stages just before and after it), and other walks from or to its stations.
  */

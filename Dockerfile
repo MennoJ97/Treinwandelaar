@@ -8,8 +8,9 @@ RUN npm run build
 
 FROM node:24-slim
 WORKDIR /app
-# osmium filters the walking routes out of Geofabrik's OpenStreetMap extract (`npm run ingest:osm`).
-RUN apt-get update && apt-get install -y --no-install-recommends osmium-tool \
+# osmium filters the walking routes out of Geofabrik's OpenStreetMap extract (`npm run ingest:osm`);
+# Nimbus Sans (fonts-urw-base35) sets the walks' link-preview cards (scripts/lib/cards.ts).
+RUN apt-get update && apt-get install -y --no-install-recommends osmium-tool fonts-urw-base35 \
     && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     DATABASE_PATH=/data/treinwandelaar.db \

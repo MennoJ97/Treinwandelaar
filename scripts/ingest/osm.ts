@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import { openDb } from '../../src/lib/server/db';
 import { lineLengthKm, type LngLat } from '../../src/lib/geo';
 import type { Collection, Station } from '../../src/lib/types';
+import { cardHost, CARD_DIR, renderCards } from '../lib/cards';
 import { walkContext } from '../lib/context';
 import { contextFeatures, hikingRoutes } from '../lib/extract';
 import {
@@ -314,6 +315,10 @@ async function main() {
 	recordFetched(db, 'osm', dataFrom);
 	const pruned = pruneStale(db, ['law', 'streekpad', 'lokaal'], seen, 'osm');
 	const prunedPaths = prunePaths(db, 'osm', seenPaths);
+	const cards = await renderCards(db, CARD_DIR, cardHost());
+	console.log(
+		`Link-preview cards: ${cards.drawn} drawn, ${cards.deleted} deleted, of ${cards.walks}.`
+	);
 	console.log(
 		`Stored ${seen.size} walks (${fromPaths} from ${paths.size} staged paths, ${loops} round walks, ` +
 			`${cut} other sections, ${duplicates} also in Wandelnet's data); skipped ${skipped} routes (NS walks, other networks)` +

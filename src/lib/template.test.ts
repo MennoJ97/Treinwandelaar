@@ -15,6 +15,14 @@ describe('fillTemplate', () => {
 		expect(out).toContain('content="https://example.org/og/treinwandelaar.png"');
 	});
 
+	it("leaves the site's card out of a page that has its own", () => {
+		const page = `${html}\n<meta property="og:image" content="https://walks.example.org/route/osm:1/og.png?v=1" />`;
+		const out = fillTemplate(page, 'https://walks.example.org', 'https://example.org');
+		expect(out).not.toContain('og/treinwandelaar.png');
+		expect(out.match(/property="og:image"/g)).toHaveLength(1);
+		expect(out).toContain('family.css');
+	});
+
 	it('leaves the family out when there is none', () => {
 		const out = fillTemplate(html, 'http://localhost:5173', undefined);
 		expect(out).not.toContain('%');

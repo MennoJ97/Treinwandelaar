@@ -1,7 +1,13 @@
 import { error } from '@sveltejs/kit';
 import { db } from '#lib/server/context.js';
 import { sketch } from '#lib/server/sketch.js';
-import { getWalk, osmUpdated, relatedWalks, wandelnetUpdated } from '#lib/server/walks.js';
+import {
+	getWalk,
+	osmUpdated,
+	relatedWalks,
+	walkCard,
+	wandelnetUpdated
+} from '#lib/server/walks.js';
 import type { PageServerLoad } from './$types';
 
 /** Plain HTML, no hydration: nothing on the page needs a script, and the data would double its size. */
@@ -21,6 +27,7 @@ export const load: PageServerLoad = ({ params, locals }) => {
 		walk: rest,
 		sketch: sketch(geometry),
 		related: relatedWalks(conn, walk, locals.user),
+		card: walkCard(conn, walk.id),
 		updated: walk.source === 'osm' ? osmUpdated(conn) : wandelnetUpdated(conn)
 	};
 };
