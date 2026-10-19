@@ -8,9 +8,11 @@
  * 650k features, nor the route ways.
  */
 import { haversine, type LngLat } from '../../src/lib/geo';
-import type { Cover, WalkAlong } from '../../src/lib/types';
+import { coverCode, PROFILE_STEP_KM, type AlongProfile } from '../../src/lib/along';
+import type { Cover } from '../../src/lib/types';
 
-const SAMPLE_M = 50;
+/** As the stored profiles count (one character per step). */
+const SAMPLE_M = PROFILE_STEP_KM * 1000;
 const CELL_M = 250;
 
 /** How close a village's (or town's…) node has to be for the walk to pass it. */
@@ -23,8 +25,6 @@ const PLACE_RADIUS_M: Record<string, number> = {
 const SIGHT_RADIUS_M = 150;
 /** A sample on a route way: the way the walk follows there, not one crossing it. */
 const ON_WAY_M = 20;
-
-const MAX = { places: 8, nature: 5, sights: 6 };
 
 /** When polygons overlap (a wood in the dunes, a village in a forest), the rarer landscape wins. */
 const COVER_PRIORITY: Record<Cover, number> = { dunes: 4, heath: 3, forest: 2, builtUp: 1 };
@@ -141,15 +141,10 @@ function segmentDistance(p: [number, number], a: [number, number], b: [number, n
 	return Math.hypot(p[0] - (a[0] + t * vx), p[1] - (a[1] + t * vy));
 }
 
-interface Sample {
-	walk: number;
-	km: number;
-	xy: [number, number];
-	cover: Cover | null;
-	surface: 'paved' | 'unpaved' | null;
-	/** Distance to the nearest route way seen so far. */
-	wayM: number;
-}
+const COVER_BY_PRIORITY = Object.fromEntries(
+	Object.entries(COVER_PRIORITY).map(([c, p]) => [p, c as Cover])
+) as Record<number, Cover>;
+const SURFACES = [null, 'paved', 'unpaved'] as const;
 
 export interface GeoFeature {
 	geometry: { type: string; coordinates: unknown } | null;
@@ -161,28 +156,42 @@ export interface GeoFeature {
  * (addFeature) in any order, then read the result with done().
  */
 export function walkContext(tracks: LngLat[][]) {
-	const samples: Sample[] = [];
-	const cells = new Map<string, number[]>();
-	const cellKey = (cx: number, cy: number) => `${cx}:${cy}`;
-	tracks.forEach((track, walk) =>
-		samplePoints(track).forEach(({ at, km }) => {
-			const xy = project(at);
-			const key = cellKey(Math.floor(xy[0] / CELL_M), Math.floor(xy[1] / CELL_M));
+	// The samples as columns, not objects: about a million of them for every walk and path.
+	const walkOf: number[] = [];
+	const kmOf: number[] = [];
+	const xOf: number[] = [];
+	const yOf: number[] = [];
+	const cells = new Map<number, number[]>();
+	const cellKey = (cx: number, cy: number) => cx * 100_000 + cy;
+	tracks.forEach((track, walk) => {
+		for (const { at, km } of samplePoints(track)) {
+			const [x, y] = project(at);
+			const key = cellKey(Math.floor(x / CELL_M), Math.floor(y / CELL_M));
 			if (!cells.has(key)) cells.set(key, []);
-			cells.get(key)!.push(samples.length);
-			samples.push({ walk, km, xy, cover: null, surface: null, wayM: Infinity });
-		})
-	);
+			cells.get(key)!.push(walkOf.length);
+			walkOf.push(walk);
+			kmOf.push(km);
+			xOf.push(x);
+			yOf.push(y);
+		}
+	});
+	const n = walkOf.length;
+	/** COVER_PRIORITY of the landscape at each sample (0: none of them). */
+	const coverAt = new Uint8Array(n);
+	/** Index into SURFACES of the nearest route way, and how far that way is. */
+	const surfaceAt = new Uint8Array(n);
+	const wayM = new Float64Array(n).fill(Infinity);
 
-	/** Samples in the box [x0, y0]–[x1, y1] (projected metres). */
+	/** Indices of the samples in the box [x0, y0]–[x1, y1] (projected metres). */
 	function* inBox(x0: number, y0: number, x1: number, y1: number) {
 		for (let cx = Math.floor(x0 / CELL_M); cx <= Math.floor(x1 / CELL_M); cx++)
 			for (let cy = Math.floor(y0 / CELL_M); cy <= Math.floor(y1 / CELL_M); cy++)
-				for (const i of cells.get(cellKey(cx, cy)) ?? []) yield samples[i];
+				yield* cells.get(cellKey(cx, cy)) ?? [];
 	}
 
 	const places = tracks.map(() => new Map<string, { km: number; rank: number }>());
-	const nature = tracks.map(() => new Map<string, number>());
+	// Every sample inside a nature area, as km: a whole path can enter the same one twice.
+	const nature = tracks.map(() => new Map<string, number[]>());
 	const sights = tracks.map(() => new Map<string, number>());
 	const note = (map: Map<string, number>, name: string, km: number) => {
 		if (!map.has(name) || km < map.get(name)!) map.set(name, km);
@@ -191,9 +200,10 @@ export function walkContext(tracks: LngLat[][]) {
 	/** Nearest sample of each walk within `metres` of `xy`. */
 	function nearest(xy: [number, number], metres: number) {
 		const best = new Map<number, { km: number; d: number }>();
-		for (const s of inBox(xy[0] - metres, xy[1] - metres, xy[0] + metres, xy[1] + metres)) {
-			const d = Math.hypot(s.xy[0] - xy[0], s.xy[1] - xy[1]);
-			if (d <= metres && d < (best.get(s.walk)?.d ?? Infinity)) best.set(s.walk, { km: s.km, d });
+		for (const i of inBox(xy[0] - metres, xy[1] - metres, xy[0] + metres, xy[1] + metres)) {
+			const d = Math.hypot(xOf[i] - xy[0], yOf[i] - xy[1]);
+			if (d <= metres && d < (best.get(walkOf[i])?.d ?? Infinity))
+				best.set(walkOf[i], { km: kmOf[i], d });
 		}
 		return best;
 	}
@@ -203,16 +213,16 @@ export function walkContext(tracks: LngLat[][]) {
 		const pts = line.map(project);
 		for (let i = 1; i < pts.length; i++) {
 			const [a, b] = [pts[i - 1], pts[i]];
-			for (const s of inBox(
+			for (const i of inBox(
 				Math.min(a[0], b[0]) - ON_WAY_M,
 				Math.min(a[1], b[1]) - ON_WAY_M,
 				Math.max(a[0], b[0]) + ON_WAY_M,
 				Math.max(a[1], b[1]) + ON_WAY_M
 			)) {
-				const d = segmentDistance(s.xy, a, b);
-				if (d <= ON_WAY_M && d < s.wayM) {
-					s.wayM = d;
-					s.surface = surface;
+				const d = segmentDistance([xOf[i], yOf[i]], a, b);
+				if (d <= ON_WAY_M && d < wayM[i]) {
+					wayM[i] = d;
+					surfaceAt[i] = SURFACES.indexOf(surface);
 				}
 			}
 		}
@@ -250,57 +260,43 @@ export function walkContext(tracks: LngLat[][]) {
 		const reserve = name && isNature(tags) ? name : null;
 		if (!cover && !reserve) return;
 		for (const rings of polygons) {
-			for (const s of inBox(...bbox(rings[0]))) {
-				if (!inRings(s.xy, rings)) continue;
-				if (cover && (!s.cover || COVER_PRIORITY[cover] > COVER_PRIORITY[s.cover])) s.cover = cover;
-				if (reserve) note(nature[s.walk], reserve, s.km);
+			for (const i of inBox(...bbox(rings[0]))) {
+				if (!inRings([xOf[i], yOf[i]], rings)) continue;
+				if (cover) coverAt[i] = Math.max(coverAt[i], COVER_PRIORITY[cover]);
+				if (reserve) {
+					const kms = nature[walkOf[i]].get(reserve) ?? [];
+					kms.push(kmOf[i]);
+					nature[walkOf[i]].set(reserve, kms);
+				}
 			}
 		}
 	}
 
-	/** Shares rounded to 10%: a small edit in OSM shouldn't change the page (and its lastmod). */
-	const tenths = (n: number, total: number) => Math.round((n / total) * 10) * 10;
-	const inOrder = (map: Map<string, number>, max: number) =>
-		[...map]
-			.sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
-			.slice(0, max)
-			.map(([name]) => name);
+	const km2 = (km: number) => Math.round(km * 100) / 100;
 
-	function done(): (WalkAlong | null)[] {
-		const byWalk = tracks.map((): Sample[] => []);
-		for (const s of samples) byWalk[s.walk].push(s);
+	/** Each track's profile (see AlongProfile); summed up for a walk with alongOf(profile). */
+	function done(): AlongProfile[] {
+		// A track's samples are one run, in order.
+		const byWalk = tracks.map((): number[] => []);
+		for (let i = 0; i < n; i++) byWalk[walkOf[i]].push(i);
 		return byWalk.map((own, walk) => {
-			if (!own.length) return null;
-			const count = (pick: (s: Sample) => unknown) => own.filter(pick).length;
-			const cover: WalkAlong['cover'] = {};
-			for (const c of Object.keys(COVER_PRIORITY) as Cover[]) {
-				const share = tenths(
-					count((s) => s.cover === c),
-					own.length
-				);
-				if (share) cover[c] = share;
+			const ranges: [string, number, number][] = [];
+			for (const [name, kms] of nature[walk]) {
+				kms.sort((a, b) => a - b);
+				// Samples close together are one visit; a gap of more than 500 m is another.
+				let from = kms[0];
+				for (let i = 1; i <= kms.length; i++)
+					if (i === kms.length || kms[i] - kms[i - 1] > 0.5) {
+						ranges.push([name, km2(from), km2(kms[i - 1])]);
+						from = kms[i];
+					}
 			}
-			// Villages before hamlets when there are too many, then back in walking order.
-			const placeList = [...places[walk]]
-				.sort((a, b) => a[1].rank - b[1].rank || a[1].km - b[1].km)
-				.slice(0, MAX.places)
-				.sort((a, b) => a[1].km - b[1].km || a[0].localeCompare(b[0]))
-				.map(([name]) => name);
 			return {
-				places: placeList,
-				nature: inOrder(nature[walk], MAX.nature),
-				sights: inOrder(sights[walk], MAX.sights),
-				cover,
-				surface: {
-					paved: tenths(
-						count((s) => s.surface === 'paved'),
-						own.length
-					),
-					unpaved: tenths(
-						count((s) => s.surface === 'unpaved'),
-						own.length
-					)
-				}
+				cover: own.map((i) => coverCode(COVER_BY_PRIORITY[coverAt[i]] ?? null)).join(''),
+				surface: own.map((i) => SURFACES[surfaceAt[i]]?.[0] ?? '-').join(''),
+				places: [...places[walk]].map(([name, { km, rank }]) => [name, km2(km), rank]),
+				nature: ranges,
+				sights: [...sights[walk]].map(([name, km]) => [name, km2(km)])
 			};
 		});
 	}

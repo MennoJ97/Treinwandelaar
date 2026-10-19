@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { alongOf, type AlongProfile } from '../along';
 import { simplify, type LngLat } from '../geo';
 import { parseStretchId, planStretch, stageList } from '../path';
 import type {
@@ -95,6 +96,14 @@ export function getPath(db: DatabaseSync, id: string, user: string | null): Path
 	};
 }
 
+/** What a stretch passes, from its path's profile (OSM ingest); null before the profile exists. */
+function stretchAlong(db: DatabaseSync, pathId: string, from: PathStop, to: PathStop) {
+	const row = db.prepare('select profile from paths where id = ?').get(pathId) as
+		{ profile: string | null } | undefined;
+	const line = row?.profile ? (JSON.parse(row.profile) as AlongProfile[])[from.line] : undefined;
+	return line ? alongOf(line, from.km, to.km) : null;
+}
+
 /**
  * A stretch of a path that the ingest didn't cut as a day walk, planned on request: 'pad:<slug>:WSM-GN'
  * is the path from Winsum to Groningen, 'pad:<slug>:GN-e2' from Groningen to the end of the third
@@ -141,7 +150,7 @@ export function plannedWalk(db: DatabaseSync, id: string, user: string | null): 
 		gpxUrl: null,
 		photos: [],
 		notes: null,
-		along: null
+		along: stretchAlong(db, path.id, from, to)
 	};
 }
 

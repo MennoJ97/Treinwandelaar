@@ -80,7 +80,8 @@ create table if not exists paths (
 	stages text not null,             -- JSON PathStage[]
 	source_url text not null,
 	wandelnet_duplicate integer not null default 0, -- an OSM path that Wandelnet's data also has
-	updated_at text not null
+	updated_at text not null,
+	profile text                      -- JSON AlongProfile per line: what it passes (src/lib/along.ts)
 );
 
 -- Stage ends of those paths far from a station but on a bus line to one (scripts/ingest/gtfs.ts): more
@@ -221,6 +222,10 @@ function migrate(db: DatabaseSync) {
 		db.exec(`update trip_cache set expires_at = fetched_at + ${7 * 24 * 3600}`);
 	}
 	db.exec('create index if not exists trip_cache_expires on trip_cache (expires_at)');
+	const pathColumns = (db.prepare('pragma table_info(paths)').all() as { name: string }[]).map(
+		(c) => c.name
+	);
+	if (!pathColumns.includes('profile')) db.exec('alter table paths add column profile text');
 
 	// The personal layer used to be single-user (keyed by walk_id alone); its rows go to LOCAL_USER.
 	const userColumns = (db.prepare('pragma table_info(user_walk)').all() as { name: string }[]).map(

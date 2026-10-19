@@ -70,6 +70,12 @@ export interface WalkAlong {
 	surface: { paved: number; unpaved: number };
 }
 
+/** Enough of a walk to link to it as the stage before or after another. */
+export type StageSummary = Pick<
+	WalkListItem,
+	'id' | 'name' | 'startStationName' | 'endStationName' | 'startPlace' | 'endPlace' | 'distanceKm'
+>;
+
 /** A walk in the list, without its line: the page loads the lines on their own (/api/walk-lines). */
 export type WalkListItem = Omit<WalkSummary, 'geometry'>;
 
@@ -137,6 +143,8 @@ export interface WalkDetail extends WalkSummary {
 	photos: WalkPhoto[];
 	notes: string | null;
 	along: WalkAlong | null;
+	/** The stages of its path just before and after it, for the map's walk panel (withStages). */
+	stages?: { prev: StageSummary | null; next: StageSummary | null };
 }
 
 export interface TripLeg {

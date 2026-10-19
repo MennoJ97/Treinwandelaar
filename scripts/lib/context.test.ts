@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LngLat } from '../../src/lib/geo';
+import { alongOf } from '../../src/lib/along';
 import { coverOf, samplePoints, sightOf, surfaceOf, walkContext } from './context';
 
 // A walk 2 km due east along 52° N, from 5.000 to ~5.029.
@@ -89,7 +90,8 @@ describe('what a walk passes', () => {
 			geometry: { type: 'Point', coordinates: [5.025, 52.0005] },
 			properties: { man_made: 'windmill', name: 'De Hoop' }
 		});
-		const [mine, theirs] = c.done();
+		const profiles = c.done();
+		const [mine, theirs] = profiles.map((p) => alongOf(p));
 		expect(mine).toEqual({
 			places: ['Eerder', 'Later'],
 			nature: ['Het Bos'],
@@ -97,6 +99,16 @@ describe('what a walk passes', () => {
 			cover: { heath: 30, forest: 30 },
 			surface: { paved: 50, unpaved: 50 }
 		});
+		// A stretch of it: only what lies between its km, in its own walking order.
+		expect(profiles[0].cover).toMatch(/^h{10}f{10}-{20}$/);
+		// Walked backwards: the places come the other way round.
+		expect(alongOf(profiles[0], 1.95, 0).places).toEqual(['Later', 'Eerder']);
+		expect(alongOf(profiles[0], 0.5, 1.95)).toMatchObject({
+			places: ['Later'],
+			cover: { forest: 30 },
+			sights: ['molen De Hoop']
+		});
+		expect(alongOf(profiles[0], 0, 0.5).sights).toEqual([]);
 		expect(theirs).toMatchObject({
 			places: [],
 			nature: [],

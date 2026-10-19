@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { initSchema, LOCAL_USER } from './db';
-import { getWalk, listWalks, publicWalks, relatedWalks, updateUserWalk, walkLines } from './walks';
+import {
+	getWalk,
+	listWalks,
+	publicWalks,
+	relatedWalks,
+	updateUserWalk,
+	walkLines,
+	withStages
+} from './walks';
 
 function addWalk(db: DatabaseSync, id: string, source: string, collection: string, duplicate = 0) {
 	db.prepare(
@@ -135,6 +143,49 @@ describe("a path's stages", () => {
 	);
 	for (const id of ['osm:pad:C-D', 'osm:pad:A-B', 'osm:pad:B-C']) addWalk(db, id, 'osm', 'law');
 	const stage = (id: string) => getWalk(db, id, null)!;
+
+	it("follow the path's own stages where no day walk joins on", () => {
+		const db = freshDb();
+		db.exec(`insert into stations (code, name, lat, lng) values ('A', 'Aa', 52, 5), ('B', 'Bee', 52, 5.1),
+			('C', 'Cee', 52, 5.2), ('D', 'Dee', 52, 5.3)`);
+		const line = Array.from({ length: 31 }, (_, i) => [5 + i / 100, 52]);
+		db.prepare(
+			`insert into paths (id, source, collection, name, km, lines, stops, stages, source_url, updated_at)
+			 values ('pad:x', 'wandelnet', 'law', 'Proefpad', 20, ?, ?, ?, 'u', '2026-10-19')`
+		).run(
+			JSON.stringify([line]),
+			JSON.stringify(
+				['A', 'B', 'C', 'D'].map((code, i) => ({
+					key: code,
+					code,
+					name: code,
+					place: null,
+					line: 0,
+					index: i * 10,
+					km: i * 6.9,
+					metres: 100
+				}))
+			),
+			JSON.stringify(
+				[
+					[0, 6.9],
+					[6.9, 20.7]
+				].map(([fromKm, toKm], n) => ({
+					number: n + 1,
+					places: null,
+					url: 'u',
+					line: 0,
+					fromKm,
+					toKm
+				}))
+			)
+		);
+		// A–B is stage 1; the stage after it ends at D, so the next stretch is B–D. Backwards from C, A.
+		const ab = withStages(db, getWalk(db, 'pad:x:A-B', 'menno')!, 'menno').stages!;
+		expect([ab.prev, ab.next?.id]).toEqual([null, 'pad:x:B-D']);
+		const cb = withStages(db, getWalk(db, 'pad:x:C-B', 'menno')!, 'menno').stages!;
+		expect(cb.next?.id).toBe('pad:x:B-A');
+	});
 
 	it('come in path order, with the stages before and after', () => {
 		const r = relatedWalks(db, stage('osm:pad:B-C'), null);

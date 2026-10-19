@@ -44,15 +44,25 @@ function tagsOf(field: string | undefined): Record<string, string> {
  * Route relations from OPL with way locations inlined (`osmium add-locations-to-ways -f opl`), in
  * the shape of Overpass `out geom`, so the same code turns them into walks.
  */
-export function parseRoutesOpl(opl: string): OsmRelation[] {
+export function parseRoutesOpl(opl: string | Iterable<string>): OsmRelation[] {
+	const parser = oplParser();
+	for (const line of typeof opl === 'string' ? opl.split('\n') : opl) parser.line(line);
+	return parser.done();
+}
+
+/**
+ * The same, a line at a time: the OPL of NL's routes is ~160 MB, too much to hold as one string
+ * next to what is parsed from it.
+ */
+function oplParser() {
 	const ways = new Map<
 		number,
 		{ geometry: { lat: number; lon: number }[]; tags: Record<string, string> }
 	>();
 	const relations: OsmRelation[] = [];
-	for (const line of opl.split('\n')) {
+	function line(line: string) {
 		const kind = line[0];
-		if (kind !== 'w' && kind !== 'r') continue;
+		if (kind !== 'w' && kind !== 'r') return;
 		const fields = new Map<string, string>();
 		for (const field of line.split(' ').slice(1)) fields.set(field[0], field.slice(1));
 		const id = Number(line.slice(1, line.indexOf(' ')));
@@ -77,12 +87,15 @@ export function parseRoutesOpl(opl: string): OsmRelation[] {
 			relations.push({ type: 'relation', id, tags: tagsOf(fields.get('T')), members });
 		}
 	}
-	// Ways come before relations in OPL, but attach geometry afterwards to be safe.
-	for (const rel of relations)
-		for (const m of rel.members)
-			if (m.type === 'way')
-				Object.assign(m, { geometry: ways.get(m.ref)?.geometry, tags: ways.get(m.ref)?.tags });
-	return relations;
+	function done() {
+		// Ways come before relations in OPL, but attach geometry afterwards to be safe.
+		for (const rel of relations)
+			for (const m of rel.members)
+				if (m.type === 'way')
+					Object.assign(m, { geometry: ways.get(m.ref)?.geometry, tags: ways.get(m.ref)?.tags });
+		return relations;
+	}
+	return { line, done };
 }
 
 async function download(url: string, file: string) {
@@ -137,6 +150,13 @@ export async function* contextFeatures(dir: string): AsyncGenerator<GeoFeature> 
 	}
 }
 
+async function readRoutesOpl(file: string): Promise<OsmRelation[]> {
+	const parser = oplParser();
+	for await (const line of createInterface({ input: createReadStream(file), crlfDelay: Infinity }))
+		parser.line(line);
+	return parser.done();
+}
+
 /**
  * The walking-route relations of the Netherlands, plus the moment the extract's data is from.
  * Downloads a new extract when the one in `dir` is older than MAX_AGE_DAYS (or with --refresh).
@@ -166,7 +186,7 @@ export async function hikingRoutes(
 		.toString()
 		.trim();
 	return {
-		relations: parseRoutesOpl(readFileSync(opl, 'utf8')),
+		relations: await readRoutesOpl(opl),
 		dataFrom: stamp ? new Date(stamp) : statSync(pbf).mtime
 	};
 }

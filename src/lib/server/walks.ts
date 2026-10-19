@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { parseStretchId } from '../path';
 import type {
 	Collection,
+	PathDetail,
 	PathStop,
 	WalkDetail,
 	WalkListItem,
@@ -9,7 +10,7 @@ import type {
 	WalkSource,
 	WalkSummary
 } from '../types';
-import { plannedWalk } from './paths';
+import { getPath, plannedWalk } from './paths';
 
 /* Row shape shared by the summary and detail queries. */
 interface WalkRow {
@@ -135,6 +136,22 @@ export function publicWalks(db: DatabaseSync): { id: string; changedOn: string |
 		.all() as unknown as { id: string; changedOn: string | null }[];
 }
 
+/** A walk with the stages of its path just before and after it, for the map's walk panel. */
+export function withStages(db: DatabaseSync, walk: WalkDetail, user: string | null): WalkDetail {
+	const { prev, next } = relatedWalks(db, walk, user);
+	const slim = (w: StageLink | null) =>
+		w && {
+			id: w.id,
+			name: w.name,
+			startStationName: w.startStationName,
+			endStationName: w.endStationName,
+			startPlace: w.startPlace,
+			endPlace: w.endPlace,
+			distanceKm: w.distanceKm
+		};
+	return { ...walk, stages: { prev: slim(prev), next: slim(next) } };
+}
+
 /**
  * The version of a walk's link-preview card (data/og/, drawn by the OSM ingest), or null when it has
  * none. OpenStreetMap's walks only: the card shows the route to anyone who sees the link.
@@ -144,6 +161,60 @@ export function walkCard(db: DatabaseSync, id: string): string | null {
 		.prepare(`select og_card from walks w where w.id = ? and ${visibleTo(null)}`)
 		.get(id) as { og_card: string | null } | undefined;
 	return row?.og_card ?? null;
+}
+
+/** A stage before or after a walk; `planned` when it is a stretch planned on request (no page). */
+export type StageLink = WalkListItem & { planned: boolean };
+
+/**
+ * The stage before (dir -1) or after (dir 1) the walk `id` on its path, in walking direction: a day
+ * walk that joins on where there is one, or else a stretch from this walk's end to the stop closest
+ * to where the path's own next stage ends (Pieterpad: Groningen, then Zuidlaren). Null at either end
+ * of the path, or on a path without stages and no day walk to join.
+ */
+function neighbour(
+	db: DatabaseSync,
+	path: PathDetail,
+	id: string,
+	dir: 1 | -1,
+	stored: WalkListItem[],
+	user: string | null
+): StageLink | null {
+	const own = parseStretchId(id);
+	const stop = (key: string) => path.stops.find((s) => s.key === key);
+	const a = own && stop(own.from);
+	const b = own && stop(own.to);
+	if (!own || !a || !b || a.line !== b.line) return null;
+	// Which way along the line the walk goes, and the end it carries on from.
+	const way = b.km >= a.km ? 1 : -1;
+	const end = dir === 1 ? b : a;
+	const ahead = (km: number) => (km - end.km) * way * dir;
+	const joins = stored.find((w) => {
+		const e = parseStretchId(w.id)!;
+		const other = stop(dir === 1 ? e.to : e.from);
+		return (dir === 1 ? e.from : e.to) === end.key && !!other && ahead(other.km) > 0;
+	});
+	if (joins) return { ...joins, planned: false };
+	// The path's own stage just past this end, and the stop nearest to where it ends.
+	const onLine = path.stages.filter((s) => s.line === end.line);
+	const stage = onLine.find((s) => {
+		const [lo, hi] = [s.fromKm, s.toKm].sort((x, y) => x - y);
+		const probe = end.km + 0.5 * way * dir;
+		return probe >= lo && probe <= hi;
+	});
+	if (!stage) return null;
+	const stageEnd =
+		way * dir > 0 ? Math.max(stage.fromKm, stage.toKm) : Math.min(stage.fromKm, stage.toKm);
+	const target = path.stops
+		.filter((s) => s.line === end.line && ahead(s.km) > 2)
+		.sort((x, y) => Math.abs(x.km - stageEnd) - Math.abs(y.km - stageEnd))[0];
+	if (!target) return null;
+	const stretch = `${path.id}:${dir === 1 ? `${end.key}-${target.key}` : `${target.key}-${end.key}`}`;
+	const found = getWalk(db, stretch, user);
+	if (!found) return null;
+	const planned = !getWalk(db, stretch, user, { planned: false });
+	const { geometry: _line, ...item } = found;
+	return { ...(item as unknown as WalkListItem), planned };
 }
 
 /**
@@ -158,8 +229,8 @@ export function relatedWalks(db: DatabaseSync, walk: WalkSummary, user: string |
 				.get(pathId) as { id: string; name: string; stops: string } | undefined)
 		: undefined;
 	let stages: WalkListItem[] = [];
-	let prev: WalkListItem | null = null;
-	let next: WalkListItem | null = null;
+	let prev: StageLink | null = null;
+	let next: StageLink | null = null;
 	if (path) {
 		// Where each stop is along the path, to put its day walks in walking order.
 		const at = new Map(
@@ -178,12 +249,12 @@ export function relatedWalks(db: DatabaseSync, walk: WalkSummary, user: string |
 					(at.get(ends(a).from) ?? Infinity) - (at.get(ends(b).from) ?? Infinity) ||
 					a.name.localeCompare(b.name, 'nl')
 			);
-		const i = all.findIndex((w) => w.id === walk.id);
-		const own = parseStretchId(walk.id)!;
-		// Only a stage that joins on: the cut can leave a gap, or overlap where two sections meet.
-		prev = i > 0 && ends(all[i - 1]).to === own.from ? all[i - 1] : null;
-		next = i >= 0 && i < all.length - 1 && ends(all[i + 1]).from === own.to ? all[i + 1] : null;
 		stages = all.filter((w) => w.id !== walk.id);
+		const detail = getPath(db, path.id, user);
+		if (detail) {
+			prev = neighbour(db, detail, walk.id, -1, stages, user);
+			next = neighbour(db, detail, walk.id, 1, stages, user);
+		}
 	}
 	const stations = [walk.startStation, walk.endStation].filter((s): s is string => !!s);
 	const nearby = stations.length

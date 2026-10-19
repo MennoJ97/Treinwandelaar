@@ -3,7 +3,14 @@
 	import FeederLeg from './FeederLeg.svelte';
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
-	import { endLabel, osmNoteUrl, startLabel, WANDELNET_MELDPUNT } from '#lib/walk.js';
+	import {
+		alongSentences,
+		endLabel,
+		osmNoteUrl,
+		startLabel,
+		walkPath,
+		WANDELNET_MELDPUNT
+	} from '#lib/walk.js';
 	import {
 		accessKm,
 		accessMinutes,
@@ -26,6 +33,7 @@
 		type Station,
 		type TripLeg,
 		type TripOption,
+		type StageSummary,
 		type WalkDetail
 	} from '#lib/types.js';
 
@@ -52,6 +60,8 @@
 		reversed?: boolean;
 		/** Turn the walk around, or back. */
 		onreverse?: () => void;
+		/** Open another walk in this panel: the previous or next stage of the path. */
+		onopen?: (id: string) => void;
 		/** After a save, with the walk as the server now has it. */
 		onsaved: (walk: WalkDetail) => void;
 	}
@@ -70,8 +80,18 @@
 		onclose,
 		reversed = false,
 		onreverse,
+		onopen,
 		onsaved
 	}: Props = $props();
+
+	/** What it passes (OSM's walks), as on the walk's own page. */
+	const along = $derived(alongSentences(walk, walk.along));
+	// The places, not the stations: a stage can end in a village a bus runs to (Zuidlaren, not Haren).
+	// Walked the other way round, a stage opens reversed too (?reverse stays): label it that way.
+	const stageLine = (w: StageSummary) => {
+		const [from, to] = [w.startPlace ?? w.startStationName, w.endPlace ?? w.endStationName];
+		return reversed ? `${to} → ${from}` : `${from} → ${to}`;
+	};
 
 	type Load<T> =
 		| { status: 'idle' }
@@ -499,6 +519,30 @@
 		</ul>
 	{/if}
 
+	{#if along.length}
+		<section aria-labelledby="along-title">
+			<h3 id="along-title">Onderweg</h3>
+			<p class="description">{along.join(' ')}</p>
+		</section>
+	{/if}
+
+	{#if walk.stages?.prev || walk.stages?.next}
+		<nav class="stages" aria-label="Etappes">
+			{#if walk.stages.prev}
+				{@const prev = walk.stages.prev}
+				<button type="button" onclick={() => onopen?.(prev.id)}
+					>← Vorige etappe: {stageLine(prev)}</button
+				>
+			{/if}
+			{#if walk.stages.next}
+				{@const next = walk.stages.next}
+				<button type="button" onclick={() => onopen?.(next.id)}
+					>Volgende etappe: {stageLine(next)} →</button
+				>
+			{/if}
+		</nav>
+	{/if}
+
 	<section class="plan" aria-labelledby="plan-title">
 		<h3 id="plan-title">Je dag</h3>
 		<div class="when">
@@ -722,6 +766,8 @@
 			<a href={osmNoteUrl(walk.geometry[0])} target="_blank" rel="noreferrer"
 				>Kaartfout melden bij OpenStreetMap</a
 			>
+			{#if walk.along}<a href={walkPath(walk.id)} data-sveltekit-reload>Pagina van deze wandeling</a
+				>{/if}
 		{/if}
 		{#if walk.source === 'wandelnet'}
 			<a href={WANDELNET_MELDPUNT} target="_blank" rel="noreferrer">Probleem op de route melden</a>
@@ -1076,6 +1122,25 @@
 	.description {
 		max-width: 65ch;
 		margin: 14px 0 0;
+	}
+
+	.stages {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: 8px 16px;
+		margin-top: 14px;
+	}
+
+	.stages button {
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--rail);
+		font-size: var(--step--1);
+		text-align: left;
+		text-decoration: underline;
+		cursor: pointer;
 	}
 
 	.features {

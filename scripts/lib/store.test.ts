@@ -66,6 +66,23 @@ describe('changed_on, the sitemap lastmod', () => {
 		expect(changedOn()).not.toBe('2026-01-01');
 	});
 
+	it('keeps what the walk passes when another ingest saves it without', () => {
+		const along = {
+			places: ['Uitgeest'],
+			nature: [],
+			sights: [],
+			cover: {},
+			surface: { paved: 0, unpaved: 0 }
+		};
+		saveWalk(db, { ...walk, along });
+		backdate();
+		saveWalk(db, walk);
+		expect(changedOn()).toBe('2026-01-01');
+		expect(
+			JSON.parse((db.prepare(`select along from walks`).get() as { along: string }).along)
+		).toEqual(along);
+	});
+
 	it('is filled in from updated_at for rows from before the column', () => {
 		const old = new DatabaseSync(':memory:');
 		initSchema(old);

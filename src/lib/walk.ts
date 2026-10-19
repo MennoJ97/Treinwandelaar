@@ -2,6 +2,7 @@ import {
 	WALKABLE_STATION_M,
 	type Cover,
 	type WalkAlong,
+	type StageSummary,
 	type WalkListItem,
 	type WalkSummary
 } from './types';
@@ -23,7 +24,12 @@ export const endLabel = (w: WalkListItem) =>
  * the new walking order. A loop keeps its station and goes round the other way. The id stays, so your
  * status, rating and notes are the walk's whichever way you walk it.
  */
-export function reverseWalk<T extends WalkSummary & { along?: WalkAlong | null }>(w: T): T {
+export function reverseWalk<
+	T extends WalkSummary & {
+		along?: WalkAlong | null;
+		stages?: { prev: StageSummary | null; next: StageSummary | null };
+	}
+>(w: T): T {
 	return {
 		...w,
 		startStation: w.endStation,
@@ -39,9 +45,12 @@ export function reverseWalk<T extends WalkSummary & { along?: WalkAlong | null }
 			along: {
 				...w.along,
 				places: [...w.along.places].reverse(),
-				nature: [...w.along.nature].reverse()
+				nature: [...w.along.nature].reverse(),
+				sights: [...w.along.sights].reverse()
 			}
-		})
+		}),
+		// Walking it the other way, the stage that came after it comes before.
+		...(w.stages && { stages: { prev: w.stages.next, next: w.stages.prev } })
 	};
 }
 

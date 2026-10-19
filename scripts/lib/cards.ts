@@ -106,7 +106,7 @@ function fitLines(font: Font, text: string, size: number, width: number, max: nu
 }
 
 const capHeight = (font: Font, size: number) =>
-	((font.tables.os2 as { sCapHeight: number }).sCapHeight / font.unitsPerEm) * size;
+	((font.tables.os2 as unknown as { sCapHeight: number }).sCapHeight / font.unitsPerEm) * size;
 
 /**
  * Text as an outline, glyph by glyph, with our own path data: opentype.js 2's toPathData() writes

@@ -58,20 +58,26 @@ const CONTENT_COLUMNS = [
 	'rating_avg',
 	'review_count',
 	'source_url',
-	'gpx_url',
-	'along'
+	'gpx_url'
 ];
 
+/**
+ * What the walk passes (walks.along, page content too): only the OSM ingest works it out, for every
+ * walk, so another ingest's save (along null) keeps what is there.
+ */
+const ALONG = 'coalesce(excluded.along, walks.along)';
+
 const UPSERT = `
-	insert into walks (id, source, source_id, ${CONTENT_COLUMNS.join(', ')}, wandelnet_duplicate,
+	insert into walks (id, source, source_id, ${CONTENT_COLUMNS.join(', ')}, along, wandelnet_duplicate,
 		updated_at, changed_on)
-	values (?, ?, ?, ${CONTENT_COLUMNS.map(() => '?').join(', ')}, ?, datetime('now'), date('now'))
+	values (?, ?, ?, ${CONTENT_COLUMNS.map(() => '?').join(', ')}, ?, ?, datetime('now'), date('now'))
 	on conflict(id) do update set
 		${CONTENT_COLUMNS.map((c) => `${c} = excluded.${c}`).join(', ')},
+		along = ${ALONG},
 		wandelnet_duplicate = excluded.wandelnet_duplicate, updated_at = excluded.updated_at,
 		-- Every assignment reads the row as it was, so this compares old and new content.
 		changed_on = case when ${CONTENT_COLUMNS.map((c) => `walks.${c} is not excluded.${c}`).join(' or ')}
-			then excluded.changed_on else walks.changed_on end`;
+			or walks.along is not ${ALONG} then excluded.changed_on else walks.changed_on end`;
 
 /** Simplified to ~8 m and rounded to ~1 m: small enough to ship every route to the map at once. */
 export function compactGeometry(track: LngLat[]): LngLat[] {
@@ -169,10 +175,16 @@ export interface PathRecord {
 
 /** A whole path, for planning your own stretches of it (src/lib/path.ts). */
 export function savePath(db: DatabaseSync, p: PathRecord) {
+	// An upsert, not a replace: the profile of what the path passes (paths.profile) comes from the
+	// OSM ingest afterwards, and stays until then.
 	db.prepare(
-		`insert or replace into paths (id, source, collection, name, km, lines, stops, stages, source_url,
+		`insert into paths (id, source, collection, name, km, lines, stops, stages, source_url,
 			wandelnet_duplicate, updated_at)
-		 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+		 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+		 on conflict(id) do update set source = excluded.source, collection = excluded.collection,
+			name = excluded.name, km = excluded.km, lines = excluded.lines, stops = excluded.stops,
+			stages = excluded.stages, source_url = excluded.source_url,
+			wandelnet_duplicate = excluded.wandelnet_duplicate, updated_at = excluded.updated_at`
 	).run(
 		p.id,
 		p.source,

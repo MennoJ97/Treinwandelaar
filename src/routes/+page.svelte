@@ -580,6 +580,7 @@
 					onclose={() => select(null)}
 					{reversed}
 					onreverse={reverse}
+					onopen={(id) => select(id)}
 					{onsaved}
 				/>
 			{/key}

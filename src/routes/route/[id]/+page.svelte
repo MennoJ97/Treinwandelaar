@@ -19,6 +19,7 @@
 		wandelnetCredit,
 		WANDELNET_MELDPUNT
 	} from '#lib/walk.js';
+	import type { StageLink } from '#lib/server/walks.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -52,6 +53,10 @@
 			? `${place ?? `het ${end}`}, ${km} van station ${station}: met de bus`
 			: `station ${station}, het ${end} van de route ligt ${km} verderop`;
 	}
+
+	/** A stretch planned on request has no page of its own: it opens on the map. */
+	const stageHref = (w: StageLink) =>
+		w.planned ? `/?walk=${encodeURIComponent(w.id)}` : walkPath(w.id);
 
 	const stationsLine = (w: WalkListItem) =>
 		w.isLoop
@@ -98,10 +103,10 @@
 
 		{#if data.related.prev || data.related.next}
 			<nav class="stages" aria-label="Etappes">
-				{#if data.related.prev}<a rel="prev" href={walkPath(data.related.prev.id)}
+				{#if data.related.prev}<a rel="prev" href={stageHref(data.related.prev)}
 						>← Vorige etappe: {stationsLine(data.related.prev)}</a
 					>{/if}
-				{#if data.related.next}<a rel="next" href={walkPath(data.related.next.id)}
+				{#if data.related.next}<a rel="next" href={stageHref(data.related.next)}
 						>Volgende etappe: {stationsLine(data.related.next)} →</a
 					>{/if}
 			</nav>

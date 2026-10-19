@@ -18,6 +18,7 @@ import { openDb } from '../../src/lib/server/db';
 import { lineLengthKm, type LngLat } from '../../src/lib/geo';
 import type { Collection, Station } from '../../src/lib/types';
 import { cardHost, CARD_DIR, renderCards } from '../lib/cards';
+import { alongOf } from '../../src/lib/along';
 import { walkContext } from '../lib/context';
 import { contextFeatures, hikingRoutes } from '../lib/extract';
 import {
@@ -294,8 +295,24 @@ async function main() {
 		});
 	}
 
+	recordFetched(db, 'osm', dataFrom);
+	const pruned = pruneStale(db, ['law', 'streekpad', 'lokaal'], seen, 'osm');
+	const prunedPaths = prunePaths(db, 'osm', seenPaths);
+
 	// What each walk passes: the route ways it follows (surface), then the landscape around it.
-	const context = walkContext(walks.map((w) => w.track));
+	// Wandelnet's walks too (seen only signed in), the stretches someone kept, and every path line,
+	// so that a stretch planned on request can say what it passes (src/lib/along.ts).
+	const others = (
+		db.prepare('select id, geometry from walks').all() as { id: string; geometry: string }[]
+	).filter((r) => !seen.has(r.id));
+	const pathLines = (
+		db.prepare('select id, lines from paths').all() as { id: string; lines: string }[]
+	).map((r) => ({ id: r.id, lines: JSON.parse(r.lines) as LngLat[][] }));
+	const context = walkContext([
+		...walks.map((w) => w.track),
+		...others.map((r) => JSON.parse(r.geometry) as LngLat[]),
+		...pathLines.flatMap((p) => p.lines)
+	]);
 	for (const rel of relations)
 		for (const m of rel.members)
 			if (m.type === 'way' && m.geometry && m.tags)
@@ -303,18 +320,31 @@ async function main() {
 					m.geometry.map((p): LngLat => [p.lon, p.lat]),
 					m.tags
 				);
+	// Done with the routes and their ways (most of the memory): let them go before the features.
+	relations.length = 0;
 	let features = 0;
 	for await (const f of contextFeatures(EXTRACT_DIR)) {
 		context.addFeature(f);
 		features++;
 	}
-	const along = context.done();
-	walks.forEach((w, i) => saveWalk(db, { ...w, along: along[i] }));
-	console.log(`Matched ${features} OSM features against the walks for what they pass.`);
+	const profiles = context.done();
+	walks.forEach((w, i) => saveWalk(db, { ...w, along: alongOf(profiles[i]) }));
+	const setAlong = db.prepare(
+		`update walks set changed_on = case when along is not ?1 then date('now') else changed_on end,
+			along = ?1 where id = ?2`
+	);
+	others.forEach((r, i) => setAlong.run(JSON.stringify(alongOf(profiles[walks.length + i])), r.id));
+	const setProfile = db.prepare('update paths set profile = ? where id = ?');
+	let at = walks.length + others.length;
+	for (const p of pathLines) {
+		setProfile.run(JSON.stringify(profiles.slice(at, at + p.lines.length)), p.id);
+		at += p.lines.length;
+	}
+	console.log(
+		`Matched ${features} OSM features against ${walks.length} OSM walks, ${others.length} others and ` +
+			`${pathLines.length} paths for what they pass.`
+	);
 
-	recordFetched(db, 'osm', dataFrom);
-	const pruned = pruneStale(db, ['law', 'streekpad', 'lokaal'], seen, 'osm');
-	const prunedPaths = prunePaths(db, 'osm', seenPaths);
 	const cards = await renderCards(db, CARD_DIR, cardHost());
 	console.log(
 		`Link-preview cards: ${cards.drawn} drawn, ${cards.deleted} deleted, of ${cards.walks}.`

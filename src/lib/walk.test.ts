@@ -203,3 +203,32 @@ describe('reverseWalk', () => {
 		expect(reverseWalk(r)).toEqual(walk);
 	});
 });
+
+describe('a walk the other way round', () => {
+	it('swaps the stages before and after it, and lists the sights backwards', () => {
+		const stage = (id: string) => ({
+			id,
+			name: id,
+			startStationName: null,
+			endStationName: null,
+			startPlace: null,
+			endPlace: null,
+			distanceKm: 10
+		});
+		const walk = {
+			...base,
+			geometry: [] as [number, number][],
+			along: {
+				places: [],
+				nature: [],
+				sights: ['molen A', 'molen B'],
+				cover: {},
+				surface: { paved: 0, unpaved: 0 }
+			},
+			stages: { prev: stage('p'), next: stage('n') }
+		};
+		const back = reverseWalk(walk);
+		expect([back.stages.prev?.id, back.stages.next?.id]).toEqual(['n', 'p']);
+		expect(back.along.sights).toEqual(['molen B', 'molen A']);
+	});
+});
