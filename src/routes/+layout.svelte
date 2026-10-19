@@ -1,13 +1,17 @@
 <script lang="ts">
 	import 'maplibre-gl/dist/maplibre-gl.css';
-	import favicon from '#lib/assets/favicon.svg';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
 </script>
 
 <svelte:head>
-	<link rel="icon" type="image/svg+xml" href={favicon} />
+	<!-- Files with a URL of their own (static/), not an inlined data: URI, so a search engine can
+	     fetch the icon to show in its results. Keep these URLs stable, and keep them on Authentik's
+	     Unauthenticated Paths: ^/favicon\.svg$ ^/favicon\.png$ ^/apple-touch-icon\.png$ -->
+	<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+	<link rel="icon" type="image/png" sizes="192x192" href="/favicon.png" />
+	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 </svelte:head>
 
 {@render children()}

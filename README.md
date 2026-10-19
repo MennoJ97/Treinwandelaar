@@ -113,6 +113,9 @@ single-application forward-auth provider (paths are matched without the host), l
 ^/robots\.txt$
 ^/route/
 ^/sitemap\.xml$
+^/favicon\.svg$
+^/favicon\.png$
+^/apple-touch-icon\.png$
 ```
 
 Each walk a visitor may see also has a page of its own, `/route/<walk id>`, with its title, distance
