@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	busStation,
 	feederRide,
 	lineName,
 	stationStops,
@@ -106,5 +107,34 @@ describe('stopsNear, stationStops and lineName', () => {
 		expect(lineName('3', '136')).toBe('Bus 136');
 		expect(lineName('1', 'B')).toBe('Metro B');
 		expect(lineName('4', '')).toBe('Veerboot');
+	});
+});
+
+describe('busStation', () => {
+	// Zuidlaren: buses to Groningen (25 min) and to Assen (35 min), both ways; one to Haren only out.
+	const village = new Map([['zuidlaren', 100]]);
+	const stationOf = new Map([
+		['gn-bus', 'GN'],
+		['asn-bus', 'ASN'],
+		['hrn-bus', 'HRN']
+	]);
+	const there = (stop: string, min: number) => [at(stop, 1, 0), at('zuidlaren', 2, min)];
+	const back = (stop: string, min: number) => [at('zuidlaren', 1, 0), at(stop, 2, min)];
+	const times = (n: number, make: () => StopTime[]) => Array.from({ length: n }, make);
+
+	it('picks the station with rides both ways and the shortest ride', () => {
+		const trips = [
+			...times(30, () => there('asn-bus', 35)),
+			...times(30, () => back('asn-bus', 35)),
+			...times(30, () => there('gn-bus', 25)),
+			...times(30, () => back('gn-bus', 25)),
+			...times(30, () => there('hrn-bus', 10))
+		];
+		expect(busStation(trips, village, stationOf)).toEqual({ code: 'GN', minutes: 25 });
+	});
+
+	it('wants a bus most days, not the odd one', () => {
+		const trips = [...times(3, () => there('gn-bus', 25)), ...times(3, () => back('gn-bus', 25))];
+		expect(busStation(trips, village, stationOf)).toBeNull();
 	});
 });

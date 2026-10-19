@@ -5,7 +5,14 @@
  * along it greedily, picking the next station that makes a pleasant day (close to a target length).
  */
 import { haversine, type LngLat } from '../../src/lib/geo';
-import type { Station } from '../../src/lib/types';
+import { DAY_WALK_KM } from '../../src/lib/walk';
+import { compactGeometry } from './store';
+import {
+	WALKABLE_STATION_M,
+	type PathStage,
+	type PathStop,
+	type Station
+} from '../../src/lib/types';
 
 export interface StationHit {
 	code: string;
@@ -53,16 +60,23 @@ export function stationHits(path: LngLat[], stations: Station[], maxMetres: numb
 	}
 
 	// Two stations at nearly the same point along the path (e.g. Den Haag Centraal and HS): keep the closer.
+	// And a path that wiggles past a station (in and out of range, three times past Vorden) passes it once.
 	hits.sort((a, b) => a.index - b.index);
 	const deduped: StationHit[] = [];
 	for (const h of hits) {
 		const prev = deduped.at(-1);
+		const again = deduped.findLastIndex((d) => d.code === h.code && h.km - d.km < REPASS_KM);
 		if (prev && h.km - prev.km < 0.5) {
 			if (h.metres < prev.metres) deduped[deduped.length - 1] = h;
+		} else if (again !== -1) {
+			if (h.metres < deduped[again].metres) deduped.splice(again, deduped.length - again, h);
 		} else deduped.push(h);
 	}
 	return deduped;
 }
+
+/** Passing the same station again within this many km along the path is the same pass. */
+const REPASS_KM = 5;
 
 export interface SectionOptions {
 	minKm: number;
@@ -70,7 +84,11 @@ export interface SectionOptions {
 	maxKm: number;
 }
 
-export const DEFAULT_SECTION: SectionOptions = { minKm: 8, targetKm: 15, maxKm: 26 };
+export const DEFAULT_SECTION: SectionOptions = {
+	minKm: DAY_WALK_KM.min,
+	targetKm: 15,
+	maxKm: DAY_WALK_KM.max
+};
 
 /** Walking length of a section including the walk from/to the platforms. */
 export const sectionKm = (a: StationHit, b: StationHit) =>
@@ -142,4 +160,59 @@ export function chainStages<T>(
 		current.stageOf.push(...track.map(() => s));
 	});
 	return chains;
+}
+
+export interface StageMeta {
+	number: number;
+	places: string | null;
+	url: string;
+}
+
+/**
+ * One line of a path as the planner stores it (see src/lib/path.ts): simplified stage by stage, so
+ * every stage keeps its exact ends, with the stations it passes within walking distance. The stops'
+ * indices and km are on the simplified line, which is what gets sliced into walks.
+ */
+export function plannerLine(
+	chain: { path: LngLat[]; stageOf: number[] },
+	stages: StageMeta[],
+	stations: Station[],
+	lineNo: number
+): { line: LngLat[]; stops: PathStop[]; stages: PathStage[] } {
+	const line: LngLat[] = [];
+	const bounds: { stage: number; from: number; to: number }[] = [];
+	for (let i = 0; i < chain.path.length;) {
+		let j = i;
+		while (j < chain.path.length && chain.stageOf[j] === chain.stageOf[i]) j++;
+		const part = compactGeometry(chain.path.slice(i, j));
+		bounds.push({ stage: chain.stageOf[i], from: line.length, to: line.length + part.length - 1 });
+		line.push(...part);
+		i = j;
+	}
+	const km = cumulativeKm(line);
+	const round = (n: number) => Math.round(n * 100) / 100;
+	const name = new Map(stations.map((s) => [s.code, s.name]));
+	return {
+		line,
+		stops: stationHits(line, stations, WALKABLE_STATION_M).map((h) => ({
+			key: h.code,
+			code: h.code,
+			name: name.get(h.code) ?? h.code,
+			place: null,
+			line: lineNo,
+			index: h.index,
+			km: round(h.km),
+			metres: Math.round(h.metres)
+		})),
+		stages: bounds
+			.filter((b) => stages[b.stage])
+			.map((b) => ({
+				...stages[b.stage],
+				line: lineNo,
+				fromKm: round(km[b.from]),
+				toKm: round(km[b.to]),
+				fromIndex: b.from,
+				toIndex: b.to
+			}))
+	};
 }

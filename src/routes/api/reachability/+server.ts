@@ -16,7 +16,8 @@ import type { RequestHandler } from './$types';
 
 /**
  * Fastest trip from `from` to every walk start and end station on `date` (default next Saturday),
- * departing 08:00–10:00, plus the disruptions and engineering works on each of those routes.
+ * departing 08:00–10:00, plus the disruptions and engineering works on each of those routes. From the
+ * timetable also to every station a LAW route or streekpad passes, for planning your own stretches.
  *
  * Travel times come from the GTFS timetable (offline, a few ms) when it covers the date; the
  * planned works it already contains (replacement buses, diversions) are in those times. Only for
@@ -45,6 +46,16 @@ export const GET: RequestHandler = async ({ url }) => {
 		: await fromNs(client, from, codes, date);
 
 	if (day) {
+		// One scan serves every station, so the paths' stations cost nothing extra here (unlike from NS).
+		const stops = (
+			conn
+				.prepare(
+					`select distinct json_extract(s.value, '$.code') as code from paths, json_each(paths.stops) s
+					 union select station from path_bus_stop`
+				)
+				.all() as { code: string }[]
+		).map((r) => r.code);
+		const targets = [...new Set([...codes, ...stops])];
 		const disruptions = (client ? await disruptionsOn(client, date) : []).map((d) => ({
 			...d,
 			stretches: affectedStretches(d, date)
@@ -59,12 +70,12 @@ export const GET: RequestHandler = async ({ url }) => {
 				...(hits.length && { disruptions: hits.map((d) => d.id) })
 			};
 		};
-		for (const [code, route] of fastestRoutes(day, from, codes))
+		for (const [code, route] of fastestRoutes(day, from, targets))
 			response.times[code] = withDisruptions(route);
-		for (const [code, route] of fastestRoutesHome(day, from, codes))
+		for (const [code, route] of fastestRoutesHome(day, from, targets))
 			response.back[code] = withDisruptions(route);
 		// A station the timetable can't reach that day may be closed by works: say why if we can.
-		for (const code of codes) {
+		for (const code of targets) {
 			if (response.times[code] !== null) continue;
 			const closing = disruptions.filter((d) => d.stretches.some((s) => s.has(code)));
 			if (!closing.length) continue;

@@ -138,3 +138,35 @@ export const isFeederMode = (routeType: string) => routeType in MODES;
 export function lineName(routeType: string, shortName: string): string {
 	return `${MODES[routeType] ?? 'Bus'} ${shortName}`.trim();
 }
+
+/** A stage end needs some rides each way over the feed's two months: a bus most days, not once a week. */
+export const MIN_TRIPS_EACH_WAY = 20;
+
+/**
+ * The station to reach a stage end from by bus, found in the timetable rather than assumed: of the
+ * stations the trips calling near it run to and from, the one with at least `minTrips` rides each
+ * way and the shortest typical ride there and back. Null when no bus serves it both ways.
+ */
+export function busStation(
+	trips: StopTime[][],
+	endStops: Map<string, number>,
+	stationOf: Map<string, string>,
+	minTrips = MIN_TRIPS_EACH_WAY
+): { code: string; minutes: number } | null {
+	const rides = new Map<string, { start: number[]; end: number[] }>();
+	for (const calls of trips)
+		for (const side of ['start', 'end'] as const)
+			for (const [code, seconds] of stationsReached(calls, side, endStops, stationOf)) {
+				let r = rides.get(code);
+				if (!r) rides.set(code, (r = { start: [], end: [] }));
+				r[side].push(seconds);
+			}
+	const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
+	let best: { code: string; minutes: number } | null = null;
+	for (const [code, { start, end }] of rides) {
+		if (start.length < minTrips || end.length < minTrips) continue;
+		const minutes = Math.round((median(start) + median(end)) / 2 / 60);
+		if (!best || minutes < best.minutes) best = { code, minutes };
+	}
+	return best;
+}

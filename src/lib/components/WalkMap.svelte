@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import type {
 		ExpressionSpecification,
 		FilterSpecification,
 		GeoJSONSource,
 		Map as MlMap
 	} from 'maplibre-gl';
-	import type { Reachability, Station, WalkSummary } from '#lib/types.js';
+	import type { PathDetail, Reachability, Station, WalkSummary } from '#lib/types.js';
 	import { nearest } from '#lib/geo.js';
 	import { travelBand } from '#lib/itinerary.js';
 	import { endLabel, startLabel } from '#lib/walk.js';
@@ -16,6 +16,8 @@
 
 	interface Props {
 		walks: WalkSummary[];
+		/** A whole LAW route or streekpad you're planning stretches on: drawn under the walks. */
+		path?: PathDetail | null;
 		stations: Station[];
 		home: string;
 		reachability: Reachability;
@@ -31,6 +33,7 @@
 
 	let {
 		walks,
+		path = null,
 		stations,
 		home,
 		reachability,
@@ -126,6 +129,19 @@
 		})
 	});
 
+	const pathFeatures = $derived({
+		type: 'FeatureCollection' as const,
+		features: path
+			? [
+					{
+						type: 'Feature' as const,
+						properties: {},
+						geometry: { type: 'MultiLineString' as const, coordinates: path.lines }
+					}
+				]
+			: []
+	});
+
 	const selectedFilter = (): FilterSpecification => ['==', ['get', 'id'], selectedId ?? ''];
 
 	/** The selected walk's stations are labelled by its own end markers; don't name them twice. */
@@ -140,6 +156,7 @@
 
 	const stationFeatures = $derived.by(() => {
 		const used = new Set(walks.flatMap((w) => [w.startStation, w.endStation]));
+		for (const stop of path?.stops ?? []) used.add(stop.code);
 		used.add(home);
 		return {
 			type: 'FeatureCollection' as const,
@@ -161,6 +178,7 @@
 		m.addSource('walks', { type: 'geojson', data: walkFeatures });
 		m.addSource('stations', { type: 'geojson', data: stationFeatures });
 		m.addSource('walk-ends', { type: 'geojson', data: endFeatures });
+		m.addSource('path', { type: 'geojson', data: pathFeatures });
 
 		const bandColor = [
 			'match',
@@ -190,6 +208,18 @@
 			0
 		];
 
+		// The whole route you're planning on, dotted like a path on a topographic map.
+		m.addLayer({
+			id: 'path-line',
+			type: 'line',
+			source: 'path',
+			layout: { 'line-cap': 'round', 'line-join': 'round' },
+			paint: {
+				'line-color': cssVar('--path'),
+				'line-width': ['interpolate', ['linear'], ['zoom'], 7, 2, 12, 4],
+				'line-dasharray': [1, 1.5]
+			}
+		});
 		m.addLayer({
 			id: 'walks-casing',
 			type: 'line',
@@ -427,12 +457,32 @@
 
 	$effect(() => {
 		if (!ready || !map) return;
-		const data = [walkFeatures, stationFeatures, endFeatures] as const;
+		const data = [walkFeatures, stationFeatures, endFeatures, pathFeatures] as const;
 		// Mid style swap the sources are briefly gone; addOverlay picks up the latest data then.
 		(map.getSource('walks') as GeoJSONSource | undefined)?.setData(data[0]);
 		(map.getSource('stations') as GeoJSONSource | undefined)?.setData(data[1]);
 		(map.getSource('walk-ends') as GeoJSONSource | undefined)?.setData(data[2]);
+		(map.getSource('path') as GeoJSONSource | undefined)?.setData(data[3]);
 	});
+
+	/** A route picked to plan on: show all of it, unless a walk is open (that frames itself). */
+	$effect(() => {
+		const lines = path?.lines;
+		if (!ready || !map || !lines || untrack(() => selectedId)) return;
+		fitTo(lines.flat());
+	});
+
+	function fitTo(points: [number, number][]) {
+		const lngs = points.map((p) => p[0]);
+		const lats = points.map((p) => p[1]);
+		map?.fitBounds(
+			[
+				[Math.min(...lngs), Math.min(...lats)],
+				[Math.max(...lngs), Math.max(...lats)]
+			],
+			{ padding: panelPadding(56, true), maxZoom: 14, duration: 800 }
+		);
+	}
 
 	$effect(() => {
 		if (!ready || !map) return;
@@ -443,16 +493,7 @@
 			map.setFilter('station-labels', stationLabelFilter());
 		}
 		const walk = walks.find((w) => w.id === selectedId);
-		if (!walk) return;
-		const lngs = walk.geometry.map((p) => p[0]);
-		const lats = walk.geometry.map((p) => p[1]);
-		map.fitBounds(
-			[
-				[Math.min(...lngs), Math.min(...lats)],
-				[Math.max(...lngs), Math.max(...lats)]
-			],
-			{ padding: panelPadding(56, true), maxZoom: 14, duration: 800 }
-		);
+		if (walk) fitTo(walk.geometry);
 	});
 </script>
 

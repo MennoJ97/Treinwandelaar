@@ -7,11 +7,14 @@
 	import Mark from '#lib/components/Mark.svelte';
 	import StationPicker from '#lib/components/StationPicker.svelte';
 	import MapLegend from '#lib/components/MapLegend.svelte';
+	import RoutePlanner from '#lib/components/RoutePlanner.svelte';
+	import { stretchId } from '#lib/path.js';
 	import { amsterdamYmd, formatDuration, nextSaturdayMorning, travelBand } from '#lib/itinerary.js';
 	import {
 		COLLECTION_LABELS,
 		type Collection,
 		type Disruption,
+		type PathDetail,
 		type Reachability,
 		type ReachabilityResponse,
 		type WalkDetail as WalkDetailData,
@@ -144,6 +147,45 @@
 		return [...ids].map((id) => disruptions[id]).filter(Boolean);
 	}
 
+	// --- One LAW route or streekpad, to plan your own stretches of it ------------------------------
+	// In the URL like the walk, so a reload or a link keeps it.
+	const routeId = $derived(page.url.searchParams.get('route'));
+	let path = $state.raw<PathDetail | null>(null);
+	/** The stretch you're putting together on it, as station codes. */
+	let stretch = $state<{ from: string | null; to: string | null }>({ from: null, to: null });
+
+	$effect(() => {
+		const id = routeId;
+		if (!id) {
+			path = null;
+			return;
+		}
+		if (path?.id === id) return;
+		const controller = new AbortController();
+		fetch(`/api/paths/${encodeURIComponent(id)}`, { signal: controller.signal })
+			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+			.then((p: PathDetail) => (path = p))
+			.catch(() => {
+				if (!controller.signal.aborted) pickRoute('');
+			});
+		return () => controller.abort();
+	});
+
+	function pickRoute(id: string) {
+		stretch = { from: null, to: null };
+		const url = new URL(page.url.href);
+		if (id) url.searchParams.set('route', id);
+		else url.searchParams.delete('route');
+		goto(url, { reset: false, replace: true });
+	}
+
+	const routeGroups = $derived(
+		(['law', 'streekpad'] as const).map((c) => ({
+			label: COLLECTION_LABELS[c],
+			paths: data.paths.filter((p) => p.collection === c)
+		}))
+	);
+
 	// --- Filters & sorting --------------------------------------------------------------------------
 	let maxTravel = $state(180);
 	let maxKm = $state(25);
@@ -167,6 +209,7 @@
 	let filtersOpen = $state(false);
 	const activeFilters = $derived(
 		[
+			!!routeId,
 			maxTravel < 180,
 			maxKm < 25,
 			shown.length < collections.filter((c) => countBy[c]).length,
@@ -181,7 +224,8 @@
 			const t = minutesTo(w);
 			if (maxTravel < 180 && t != null && t > maxTravel) return false;
 			if (maxKm < 25 && w.distanceKm > maxKm) return false;
-			if (!shown.includes(w.collection)) return false;
+			// On one route, its own day walks; the route says what kind they are.
+			if (routeId ? !w.id.startsWith(`${routeId}:`) : !shown.includes(w.collection)) return false;
 			if (hideDone && w.status === 'done') return false;
 			if (noBus && needsBus(w)) return false;
 			if (hideDisrupted && walkDisruptions(w).length) return false;
@@ -249,6 +293,10 @@
 	const detail = (id: string) =>
 		details[id] ?? (data.selected?.id === id ? data.selected : undefined);
 	const selected = $derived((selectedId && detail(selectedId)) || null);
+	/** A stretch you planned yourself isn't in the list; the map shows it all the same. */
+	const mapWalks = $derived(
+		selected && !visible.some((w) => w.id === selected.id) ? [...visible, selected] : visible
+	);
 
 	// The planner's date and time, kept from walk to walk. Stamped with the list's day: pick another
 	// travel day there and the planner starts over from it.
@@ -357,7 +405,8 @@
 
 		<div class="map-area" bind:this={mapArea} style:--sheet-cover="{scrollY}px">
 			<WalkMap
-				walks={visible}
+				walks={mapWalks}
+				{path}
 				stations={data.stations}
 				{home}
 				{reachability}
@@ -440,19 +489,38 @@
 					<input type="range" min="8" max="25" step="1" bind:value={maxKm} />
 					<output class="tabular">{maxKm >= 25 ? 'alles' : `${maxKm} km`}</output>
 				</label>
-				<div class="kinds" role="group" aria-label="Soort wandeling">
-					{#each collections as c (c)}
-						{#if countBy[c]}
-							<button
-								type="button"
-								aria-pressed={shown.includes(c)}
-								onclick={() => toggleCollection(c)}
-							>
-								{COLLECTION_LABELS[c]} <span class="tabular">{countBy[c]}</span>
-							</button>
-						{/if}
-					{/each}
-				</div>
+				{#if data.paths.length}
+					<label class="route">
+						<span>Route</span>
+						<select value={routeId ?? ''} onchange={(e) => pickRoute(e.currentTarget.value)}>
+							<option value="">alle wandelingen</option>
+							{#each routeGroups as group (group.label)}
+								{#if group.paths.length}
+									<optgroup label={group.label}>
+										{#each group.paths as p (p.id)}
+											<option value={p.id}>{p.name}</option>
+										{/each}
+									</optgroup>
+								{/if}
+							{/each}
+						</select>
+					</label>
+				{/if}
+				{#if !routeId}
+					<div class="kinds" role="group" aria-label="Soort wandeling">
+						{#each collections as c (c)}
+							{#if countBy[c]}
+								<button
+									type="button"
+									aria-pressed={shown.includes(c)}
+									onclick={() => toggleCollection(c)}
+								>
+									{COLLECTION_LABELS[c]} <span class="tabular">{countBy[c]}</span>
+								</button>
+							{/if}
+						{/each}
+					</div>
+				{/if}
 				<div class="checks">
 					{#if !data.demo}
 						<label><input type="checkbox" bind:checked={hideDone} /> Verberg gelopen</label>
@@ -496,7 +564,24 @@
 				</p>
 			{/if}
 
-			<p class="count">{visible.length} van {walks.length} wandelingen</p>
+			{#if path && path.id === routeId}
+				<RoutePlanner
+					{path}
+					{reachability}
+					{reachBack}
+					bind:from={stretch.from}
+					bind:to={stretch.to}
+					onplan={(from, to) => select(stretchId(path!.id, from, to))}
+				/>
+			{/if}
+
+			<p class="count">
+				{#if routeId}
+					{visible.length} kant-en-klare dagwandelingen op deze route
+				{:else}
+					{visible.length} van {walks.length} wandelingen
+				{/if}
+			</p>
 
 			{#if visible.length}
 				<ul class="walks">
@@ -830,7 +915,8 @@
 	}
 
 	.filters input.day,
-	.sort select {
+	.sort select,
+	.route select {
 		grid-column: 2 / 4;
 		min-width: 0;
 		padding: 2px 4px;

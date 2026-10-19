@@ -3,7 +3,8 @@
  *
  * Each path page lists numbered stages. We join the stages' GPX into one line, find where it passes
  * stations, and cut it into sections of roughly 8–26 km (see ../lib/sections.ts). A section borrows
- * descriptions, photos and review-weighted ratings from the stages it overlaps.
+ * descriptions, photos and review-weighted ratings from the stages it overlaps. The whole line is kept
+ * too, with every station it passes, so the app can plan any other stretch of it (src/lib/path.ts).
  *
  * Expect the first run to take a while (~3 requests per stage at 1 req/s); later runs use the cache.
  * Personal use only: Wandelnet's terms forbid republishing this data.
@@ -11,8 +12,8 @@
 import { openDb } from '../../src/lib/server/db';
 import type { Collection, Station } from '../../src/lib/types';
 import { fetchCached, fetchList, oldestFetch } from '../lib/http';
-import { chainStages, pickSections, sectionKm, stationHits } from '../lib/sections';
-import { pruneStale, recordFetched, saveWalk } from '../lib/store';
+import { chainStages, pickSections, plannerLine, sectionKm, stationHits } from '../lib/sections';
+import { prunePaths, pruneStale, recordFetched, savePath, saveWalk } from '../lib/store';
 import {
 	WANDELNET,
 	parseGpx,
@@ -87,6 +88,7 @@ async function main() {
 	const stationName = new Map(stations.map((s) => [s.code, s.name]));
 
 	const seen = new Set<string>();
+	const seenPaths = new Set<string>();
 	const problems: string[] = [];
 
 	for (const { path, collection } of OVERVIEWS) {
@@ -118,8 +120,38 @@ async function main() {
 				}
 			}
 
+			const chains = chainStages(stages);
+			const planner = chains.map((chain, n) =>
+				plannerLine(
+					chain,
+					stages.map(({ data: s }) => ({
+						number: s.number,
+						places:
+							s.entry.startPlace && s.entry.endPlace
+								? `${s.entry.startPlace} – ${s.entry.endPlace}`
+								: null,
+						url: `${WANDELNET}/wandelroute/${s.entry.id}/`
+					})),
+					stations,
+					n
+				)
+			);
+			if (planner.length) {
+				savePath(db, {
+					id: `pad:${slug}`,
+					source: 'wandelnet',
+					collection,
+					name: pathName,
+					lines: planner.map((p) => p.line),
+					stops: planner.flatMap((p) => p.stops),
+					stages: planner.flatMap((p) => p.stages),
+					sourceUrl: pathUrl
+				});
+				seenPaths.add(`pad:${slug}`);
+			}
+
 			let made = 0;
-			for (const chain of chainStages(stages)) {
+			for (const chain of chains) {
 				for (const [a, b] of pickSections(stationHits(chain.path, stations, STATION_RANGE_M))) {
 					const track = chain.path.slice(a.index, b.index + 1);
 					// Stages this section overlaps, weighted by how many points (≈ distance) it shares with each.
@@ -190,7 +222,11 @@ async function main() {
 		OVERVIEWS.map((o) => o.collection),
 		seen
 	);
-	console.log(`\nStored ${seen.size} day walks${pruned ? `, removed ${pruned} stale` : ''}.`);
+	const prunedPaths = prunePaths(db, 'wandelnet', seenPaths);
+	console.log(
+		`\nStored ${seen.size} day walks${pruned ? `, removed ${pruned} stale` : ''}; ` +
+			`${seenPaths.size} paths to plan your own stretches on${prunedPaths ? `, removed ${prunedPaths}` : ''}.`
+	);
 	if (problems.length) {
 		console.log(`\n${problems.length} issue(s):`);
 		for (const p of problems) console.log(`  - ${p}`);

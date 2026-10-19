@@ -35,6 +35,20 @@ describe('stationHits', () => {
 		const hits = stationHits(path, [station('T', 5.0)], 1000);
 		expect(hits.map((h) => h.index)).toEqual([0, path.length - 1]);
 	});
+
+	it('counts a path that wiggles in and out of range of a station as one pass, the closest', () => {
+		// East past V at ~330 m, out of range round a bend, then back west past V at ~70 m.
+		const bend: LngLat[] = [];
+		for (let lat = 52; lat <= 52.005 + 1e-9; lat += 0.001) bend.push([5.12, lat]);
+		const path: LngLat[] = [
+			...line(5, 5.12),
+			...bend,
+			...[...line(5.08, 5.12)].reverse().map(([lng]): LngLat => [lng, 52.0024])
+		];
+		const hits = stationHits(path, [station('V', 5.105)], 1000);
+		expect(hits).toHaveLength(1);
+		expect(hits[0].metres).toBeLessThan(100);
+	});
 });
 
 describe('pickSections', () => {

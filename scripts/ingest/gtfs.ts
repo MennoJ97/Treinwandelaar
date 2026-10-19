@@ -10,8 +10,11 @@
  * streamed out of it, never written to disk. Tables are swapped in one transaction.
  *
  * From the other operators we take only the feeder rides: buses, trams, metros and ferries between
- * route ends too far from a station to walk and that station (see ../lib/feeders.ts). Those depend on
- * the walks, so run this after the walk ingests; it reloads them whenever the walks' ends change.
+ * route ends too far from a station to walk and that station (see ../lib/feeders.ts). The same for the
+ * stage ends of LAW routes and streekpaden far from a station, except that there the timetable tells
+ * which station the bus runs to: those become extra stops to plan stretches from (path_bus_stop).
+ * Those depend on the walks and paths, so run this after their ingests; it reloads the rides whenever
+ * the route ends change.
  */
 import { createHash } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, renameSync, statSync } from 'node:fs';
@@ -21,13 +24,15 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import yauzl from 'yauzl';
 import type { DatabaseSync } from 'node:sqlite';
-import type { LngLat } from '../../src/lib/geo';
+import { haversine, type LngLat } from '../../src/lib/geo';
 import { openDb, transaction } from '../../src/lib/server/db';
-import { WALKABLE_STATION_M } from '../../src/lib/types';
+import { parseStretchId } from '../../src/lib/path';
+import { WALKABLE_STATION_M, type PathStage, type PathStop } from '../../src/lib/types';
 import { gtfsTime, parseCsvLine } from '../lib/csv';
 import {
 	ROUTE_STOP_M,
 	STATION_STOP_M,
+	busStation,
 	feederRide,
 	isFeederMode,
 	lineName,
@@ -207,11 +212,63 @@ function feederEnds(db: DatabaseSync): FeederEnd[] {
 	}[];
 	const ends: FeederEnd[] = [];
 	for (const r of rows) {
+		// A stretch you planned and kept from a path's stage end has its rides under the stage end.
+		if (parseStretchId(r.id)) continue;
 		const line = JSON.parse(r.geometry) as LngLat[];
 		if ((r.start_station_m ?? 0) > WALKABLE_STATION_M && r.s1_lng != null && r.s1_lat != null)
 			ends.push({ walkId: r.id, side: 'start', route: line[0], station: [r.s1_lng, r.s1_lat] });
 		if ((r.end_station_m ?? 0) > WALKABLE_STATION_M && r.s2_lng != null && r.s2_lat != null)
 			ends.push({ walkId: r.id, side: 'end', route: line.at(-1)!, station: [r.s2_lng, r.s2_lat] });
+	}
+	return ends;
+}
+
+/** A stage end of a path this far along it from a station is left to that station: walk there. */
+const NEAR_STATION_KM = 3;
+
+interface StageEnd {
+	pathId: string;
+	/** 'e3' (end of stage 3, by index) or 's0' (start of a line's first stage): see PathStop.key. */
+	key: string;
+	place: string | null;
+	line: number;
+	index: number;
+	km: number;
+	at: LngLat;
+}
+
+/** Where the paths' stages begin and end, away from their stations: candidates for a bus stop. */
+function stageEnds(db: DatabaseSync): StageEnd[] {
+	const rows = db.prepare('select id, lines, stops, stages from paths order by id').all() as {
+		id: string;
+		lines: string;
+		stops: string;
+		stages: string;
+	}[];
+	const ends: StageEnd[] = [];
+	for (const r of rows) {
+		const lines = JSON.parse(r.lines) as LngLat[][];
+		const stops = JSON.parse(r.stops) as PathStop[];
+		const stages = JSON.parse(r.stages) as PathStage[];
+		const add = (key: string, stage: PathStage, which: 'from' | 'to') => {
+			const km = stage[`${which}Km`];
+			if (stops.some((s) => s.line === stage.line && Math.abs(s.km - km) < NEAR_STATION_KM)) return;
+			const index = stage[`${which}Index`];
+			const [from, to] = stage.places?.split(' – ') ?? [];
+			ends.push({
+				pathId: r.id,
+				key,
+				place: (which === 'from' ? from : to) || null,
+				line: stage.line,
+				index,
+				km,
+				at: lines[stage.line][index]
+			});
+		};
+		stages.forEach((stage, i) => {
+			if (stages[i - 1]?.line !== stage.line) add(`s${i}`, stage, 'from');
+			add(`e${i}`, stage, 'to');
+		});
 	}
 	return ends;
 }
@@ -238,18 +295,22 @@ async function stopTimesByTrip(
 }
 
 /**
- * Feeder rides for every far route end. Streams stop_times once more, keeping only the stops near
- * those ends and stations (a few hundred of the ~60k), then pairs them up per trip.
+ * Feeder rides for every far route end and every stage end a bus serves. Streams stop_times twice,
+ * keeping only the stops near those ends and near stations (a few thousand of the ~60k): first to find
+ * the trips that call near an end, then for those trips' calls near a station.
  */
 async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 	const ends = feederEnds(db);
+	const stages = stageEnds(db);
 	const signature = createHash('sha1')
-		.update(feedDate + JSON.stringify(ends))
+		.update(feedDate + JSON.stringify(ends) + JSON.stringify(stages))
 		.digest('hex');
 	const loaded = db.prepare(`select value from meta where key = 'feeder_signature'`).get() as
 		{ value: string } | undefined;
 	if (loaded?.value === signature && !force) {
-		console.log(`Feeder rides already loaded for these ${ends.length} route ends.`);
+		console.log(
+			`Feeder rides already loaded for these ${ends.length} route ends and ${stages.length} stage ends.`
+		);
 		return;
 	}
 
@@ -260,12 +321,33 @@ async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 		stops.push({ id: r.stop_id, name: r.stop_name, at: [Number(r.stop_lon), Number(r.stop_lat)] });
 	});
 	const stopName = new Map(stops.map((s) => [s.id, s.name]));
+	const stations = db.prepare('select code, name, lng, lat from stations').all() as {
+		code: string;
+		name: string;
+		lng: number;
+		lat: number;
+	}[];
+	const stationAt = new Map(stations.map((s) => [s.code, [s.lng, s.lat] as LngLat]));
+	const stationOf = stationStops(
+		stops,
+		stations.map((s) => ({ code: s.code, at: [s.lng, s.lat] as LngLat })),
+		STATION_STOP_M
+	);
 	const near = ends.map((e) => ({
 		end: e,
 		route: stopsNear(stops, e.route, ROUTE_STOP_M),
 		station: stopsNear(stops, e.station, STATION_STOP_M)
 	}));
-	const wanted = new Set(near.flatMap((n) => [...n.route.keys(), ...n.station.keys()]));
+	const stagesNear = stages
+		.map((end) => ({ end, route: stopsNear(stops, end.at, ROUTE_STOP_M) }))
+		.filter((n) => n.route.size);
+	// The stops at the route's side of a ride; every stop by a station is on the other side's list.
+	const endStops = new Set([...near, ...stagesNear].flatMap((n) => [...n.route.keys()]));
+	const wanted = new Set([
+		...endStops,
+		...stationOf.keys(),
+		...near.flatMap((n) => [...n.station.keys()])
+	]);
 
 	const operators = new Map<string, string>();
 	await eachRow(ZIP_PATH, 'agency.txt', (r) => operators.set(r.agency_id, r.agency_name));
@@ -283,7 +365,22 @@ async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 			trips.set(r.trip_id, { route: r.route_id, service: r.service_id, headsign: r.trip_headsign });
 	});
 
-	const byTrip = await stopTimesByTrip((r) => wanted.has(r.stop_id) && trips.has(r.trip_id));
+	const calling = new Set(
+		(await stopTimesByTrip((r) => endStops.has(r.stop_id) && trips.has(r.trip_id))).keys()
+	);
+	const byTrip = await stopTimesByTrip((r) => calling.has(r.trip_id) && wanted.has(r.stop_id));
+	/** Per stop near a route end, the trips calling there. */
+	const tripsAt = new Map<string, string[]>();
+	for (const [tripId, calls] of byTrip)
+		for (const c of calls)
+			if (endStops.has(c.stopId)) {
+				let list = tripsAt.get(c.stopId);
+				if (!list) tripsAt.set(c.stopId, (list = []));
+				list.push(tripId);
+			}
+	const tripsNear = (route: Map<string, number>) => [
+		...new Set([...route.keys()].flatMap((id) => tripsAt.get(id) ?? []))
+	];
 
 	type Row = [
 		string,
@@ -301,35 +398,66 @@ async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 	];
 	const rows: Row[] = [];
 	const services = new Set<string>();
-	const stranded: typeof near = [];
-	for (const n of near) {
-		const { end, route, station } = n;
+	/** The rides one trip offers between a route end and its station, as rows; how many. */
+	function addRides(
+		walkId: string,
+		sides: FeederEnd['side'][],
+		tripIds: string[],
+		route: Map<string, number>,
+		station: Map<string, number>
+	) {
 		let count = 0;
-		for (const [tripId, stopTimes] of byTrip) {
-			const ride = feederRide(stopTimes, end.side, route, station);
-			if (!ride) continue;
-			const trip = trips.get(tripId)!;
-			const { line, operator } = routes.get(trip.route)!;
-			services.add(trip.service);
-			rows.push([
-				end.walkId,
-				end.side,
-				Number(tripId),
-				trip.service,
-				line,
-				operator,
-				trip.headsign,
-				stopName.get(ride.board.stopId) ?? '?',
-				stopName.get(ride.alight.stopId) ?? '?',
-				ride.board.dep,
-				ride.alight.arr,
-				ride.stopM
-			]);
-			count++;
-		}
-		if (!count) stranded.push(n);
+		for (const tripId of tripIds)
+			for (const side of sides) {
+				const ride = feederRide(byTrip.get(tripId)!, side, route, station);
+				if (!ride) continue;
+				const trip = trips.get(tripId)!;
+				const { line, operator } = routes.get(trip.route)!;
+				services.add(trip.service);
+				rows.push([
+					walkId,
+					side,
+					Number(tripId),
+					trip.service,
+					line,
+					operator,
+					trip.headsign,
+					stopName.get(ride.board.stopId) ?? '?',
+					stopName.get(ride.alight.stopId) ?? '?',
+					ride.board.dep,
+					ride.alight.arr,
+					ride.stopM
+				]);
+				count++;
+			}
+		return count;
 	}
-	if (stranded.length) await suggestStations(db, stranded, stops, byTrip, trips, routes);
+
+	const stranded: typeof near = [];
+	for (const n of near)
+		if (!addRides(n.end.walkId, [n.end.side], tripsNear(n.route), n.route, n.station))
+			stranded.push(n);
+	if (stranded.length) suggestStations(stations, stranded, stationOf, byTrip, trips, routes);
+
+	const busStops: (StageEnd & { place: string; station: string; metres: number })[] = [];
+	for (const { end, route } of stagesNear) {
+		const tripIds = tripsNear(route);
+		const choice = busStation(
+			tripIds.map((id) => byTrip.get(id)!),
+			route,
+			stationOf
+		);
+		if (!choice) continue;
+		const at = stationAt.get(choice.code)!;
+		const metres = Math.round(haversine(end.at, at));
+		if (metres <= WALKABLE_STATION_M) continue; // a station stop on the path covers it
+		const station = stopsNear(stops, at, STATION_STOP_M);
+		addRides(`${end.pathId}:${end.key}`, ['start', 'end'], tripIds, route, station);
+		// Unnamed stage ends take the town from the nearest stop's name ("Schoonloo, Hoofdweg").
+		const nearest = [...route].sort((a, b) => a[1] - b[1])[0][0];
+		const place = end.place ?? stopName.get(nearest)?.split(',')[0].trim() ?? '?';
+		busStops.push({ ...end, place, station: choice.code, metres });
+	}
 
 	const serviceDates: [string, string][] = [];
 	await eachRow(ZIP_PATH, 'calendar_dates.txt', (r) => {
@@ -338,7 +466,7 @@ async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 	});
 
 	transaction(db, () => {
-		db.exec('delete from feeder_trip; delete from feeder_service_date;');
+		db.exec('delete from feeder_trip; delete from feeder_service_date; delete from path_bus_stop;');
 		const insTrip = db.prepare(
 			`insert or ignore into feeder_trip (walk_id, side, trip_id, service_id, line, operator, headsign,
 				board, alight, dep, arr, stop_m) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -348,49 +476,34 @@ async function loadFeeders(db: DatabaseSync, feedDate: string, force: boolean) {
 			'insert or ignore into feeder_service_date (service_id, date) values (?, ?)'
 		);
 		for (const [s, d] of serviceDates) insDate.run(s, d);
+		const insStop = db.prepare(
+			`insert or replace into path_bus_stop (path_id, key, place, station, line, idx, km, metres)
+			 values (?, ?, ?, ?, ?, ?, ?, ?)`
+		);
+		for (const b of busStops)
+			insStop.run(b.pathId, b.key, b.place, b.station, b.line, b.index, b.km, b.metres);
 		db.prepare(`insert or replace into meta (key, value) values ('feeder_signature', ?)`).run(
 			signature
 		);
 	});
 	console.log(
-		`Loaded ${rows.length} feeder rides for ${ends.length} route ends in ` +
-			`${((Date.now() - t0) / 1000).toFixed(0)} s.`
+		`Loaded ${rows.length} feeder rides for ${ends.length} route ends and ${busStops.length} of ` +
+			`${stages.length} stage ends away from a station in ${((Date.now() - t0) / 1000).toFixed(0)} s.`
 	);
 }
 
 /**
  * Route ends with no direct ride to their station: the stations a line from there does reach, with
  * the typical ride, so the walk can be pointed at the best one in scripts/ingest/overrides.json.
- * Streams stop_times once more, keeping only the trips that call near those ends.
  */
-async function suggestStations(
-	db: DatabaseSync,
+function suggestStations(
+	stations: { code: string; name: string }[],
 	stranded: { end: FeederEnd; route: Map<string, number> }[],
-	stops: Stop[],
-	callsNear: Map<string, StopTime[]>,
+	stationOf: Map<string, string>,
+	byTrip: Map<string, StopTime[]>,
 	trips: Map<string, { route: string }>,
 	routes: Map<string, { line: string }>
 ) {
-	const stations = db.prepare('select code, name, lng, lat from stations').all() as {
-		code: string;
-		name: string;
-		lng: number;
-		lat: number;
-	}[];
-	const stationOf = stationStops(
-		stops,
-		stations.map((s) => ({ code: s.code, at: [s.lng, s.lat] as LngLat })),
-		STATION_STOP_M
-	);
-	const endStops = new Set(stranded.flatMap((n) => [...n.route.keys()]));
-	const candidates = new Set(
-		[...callsNear]
-			.filter(([, calls]) => calls.some((c) => endStops.has(c.stopId)))
-			.map(([id]) => id)
-	);
-	const byTrip = await stopTimesByTrip(
-		(r) => candidates.has(r.trip_id) && (endStops.has(r.stop_id) || stationOf.has(r.stop_id))
-	);
 	const stationName = new Map(stations.map((s) => [s.code, s.name]));
 
 	for (const { end, route } of stranded) {

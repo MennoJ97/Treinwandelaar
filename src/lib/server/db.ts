@@ -65,6 +65,35 @@ create table if not exists walk_photos (
 	primary key (walk_id, url)
 );
 
+-- Whole LAW routes and streekpaden, to plan your own station-to-station stretches (src/lib/path.ts).
+create table if not exists paths (
+	id text primary key,              -- 'pad:<slug>' | 'osm:<slug>'
+	source text not null,
+	collection text not null,         -- 'law' | 'streekpad'
+	name text not null,
+	km real not null,
+	lines text not null,              -- JSON [[[lng,lat],...],...], simplified like walks.geometry
+	stops text not null,              -- JSON PathStop[]: stations within walking distance, in path order
+	stages text not null,             -- JSON PathStage[]
+	source_url text not null,
+	wandelnet_duplicate integer not null default 0, -- an OSM path that Wandelnet's data also has
+	updated_at text not null
+);
+
+-- Stage ends of those paths far from a station but on a bus line to one (scripts/ingest/gtfs.ts): more
+-- places to start or end a stretch. Their rides are in feeder_trip, under walk_id '<path id>:<key>'.
+create table if not exists path_bus_stop (
+	path_id text not null,
+	key text not null,                -- 'e3': end of stage 3 (index in paths.stages); 's0': start of stage 0
+	place text not null,              -- "Zuidlaren"
+	station text not null,            -- where the bus runs to and from
+	line integer not null,
+	idx integer not null,             -- point on the line
+	km real not null,
+	metres integer not null,          -- straight line to the station
+	primary key (path_id, key)
+);
+
 ${USER_WALK}
 
 -- Rail timetable from the OVapi GTFS (scripts/ingest/gtfs.ts), for the offline travel-time map.

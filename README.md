@@ -39,6 +39,15 @@ is no direct line). That depends on the walks, so `npm run ingest` runs it last.
 line to its station it logs the stations a line from there does reach, by typical ride: point the walk at
 one of those, and fix other mismatches, in `scripts/ingest/overrides.json`.
 
+LAW routes and streekpaden are cut into a few day walks between stations the path passes within 1.5 km,
+and also kept whole, with every station within 2 km. Pick one under "Route" in the filters to plan your own
+stretches on it, e.g. Pieterpad stages: every station along it with its km, stage and travel time, and any
+two of them make a walk (`<path>:<from>-<to>`, either direction) that's planned when you open it. Stage ends
+more than 3 km along the path from a station are stops too when a bus serves them both ways (most days):
+`ingest:gtfs` looks up which station the buses from there reach and keeps the rides, so you can plan
+through the Drenthe stretch of the Pieterpad from Zuidlaren or Rolde (`<path>:e3-…`, the end of the
+fourth stage). Mark a stretch "Wil ik lopen" or "Gelopen" and it's kept as a walk of its own.
+
 Travel times on the map come from that timetable (a connection-scan planner, a few ms per home
 station), and NS's disruptions API flags walks whose route runs along works or a disruption on the
 chosen day. The NS trip planner is only used for the exact trains in a walk's detail panel.

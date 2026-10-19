@@ -32,3 +32,6 @@ export function wandelnetCredit(updated: string | null): string {
 	const [y, m, d] = updated?.split('-') ?? [];
 	return d ? `${credit}, bijgewerkt ${d}-${m}-${y}` : credit;
 }
+
+/** A comfortable day on a long-distance path, as the ingest cuts them (scripts/lib/sections.ts). */
+export const DAY_WALK_KM = { min: 8, max: 26 };
