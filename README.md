@@ -147,6 +147,12 @@ The ODbL can't cure a route that someone copied into OSM without permission, as 
 If you run a public demo, remove a route when its owner asks. The ODbL also asks you to offer the derived
 data: the demo serves it at `/api/osm-walks.geojson`.
 
+Each walk can also be downloaded as GPX (`/api/walks/<id>/gpx`), with the same visibility as the walk
+itself. The file carries its own credit, since it travels on without the site: © OpenStreetMap
+contributors and the ODbL for OSM walks (plus Wandelnet for LAW routes and streekpaden), and
+"© Stichting Wandelnet, alleen voor eigen gebruik" for Wandelnet's walks, which only signed-in users get.
+Where Wandelnet offers its own GPX (NS-wandelingen, OV-stappers), the app links to that instead.
+
 ## Layout
 
 - `src/lib/server/ns.ts`: NS API client with a SQLite response cache (5 min for live trips, 7 days for the travel-time map)
