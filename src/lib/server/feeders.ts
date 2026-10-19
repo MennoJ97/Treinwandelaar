@@ -22,20 +22,35 @@ interface Row {
 	geometry: string | null;
 }
 
+/** Where a walk's rides for walking it the other way round are stored (scripts/ingest/gtfs.ts). */
+export const reversedFeederId = (walkId: string) => `reverse:${walkId}`;
+
 /**
  * Under which walk id the rides for each end are stored. A stretch of a path that starts or ends at a
- * stage end takes that stage end's rides, '<path id>:e3', whatever the other end.
+ * stage end takes that stage end's rides, '<path id>:e3', whatever the other end; a stage end has
+ * rides both ways, so turned around it is the other end's. Any other walk turned around has its own,
+ * under reversedFeederId.
  */
-export function feederKeys(walkId: string): { start: string; end: string } {
+export function feederKeys(walkId: string, reversed = false): { start: string; end: string } {
 	const stretch = parseStretchId(walkId);
+	const own = reversed ? reversedFeederId(walkId) : walkId;
 	const key = (stop: string | undefined) =>
-		stretch && stop && isStageEnd(stop) ? `${stretch.pathId}:${stop}` : walkId;
-	return { start: key(stretch?.from), end: key(stretch?.to) };
+		stretch && stop && isStageEnd(stop) ? `${stretch.pathId}:${stop}` : own;
+	const [from, to] = reversed ? [stretch?.to, stretch?.from] : [stretch?.from, stretch?.to];
+	return { start: key(from), end: key(to) };
 }
 
-/** The feeder rides for a walk on one day (YYYY-MM-DD), by departure, from scripts/ingest/gtfs.ts. */
-export function feederRides(db: DatabaseSync, walkId: string, ymd: string): Feeders {
-	const keys = feederKeys(walkId);
+/**
+ * The feeder rides for a walk on one day (YYYY-MM-DD), by departure, from scripts/ingest/gtfs.ts.
+ * Reversed: for walking it from its end to its start, `start` and `end` as you'd walk it then.
+ */
+export function feederRides(
+	db: DatabaseSync,
+	walkId: string,
+	ymd: string,
+	reversed = false
+): Feeders {
+	const keys = feederKeys(walkId, reversed);
 	const sides = new Set(
 		(
 			db

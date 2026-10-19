@@ -1,5 +1,5 @@
 import { COLLECTION_LABELS, type WalkDetail } from '../types';
-import { endLabel, startLabel } from '../walk';
+import { endLabel, reverseWalk, startLabel } from '../walk';
 
 const ODBL = 'https://opendatacommons.org/licenses/odbl/1-0/';
 const WANDELNET_TERMS = 'https://www.wandelnet.nl/algemene-voorwaarden';
@@ -41,11 +41,18 @@ function summary(walk: WalkDetail): string {
 	return `${route}, ${km} km (${COLLECTION_LABELS[walk.collection]})`;
 }
 
+/** "Pelgrimspad 01: Amsterdam – Weesp (omgekeerd)": a reversed file says so where apps list it. */
+const trackName = (walk: WalkDetail, reversed: boolean) =>
+	reversed ? `${walk.name} (omgekeerd)` : walk.name;
+
 /**
  * A walk's route as GPX 1.1, one track. The line is the simplified one the map draws (within ~8 m of
- * the source), which is plenty to follow on a phone; it has no heights or times.
+ * the source), which is plenty to follow on a phone; it has no heights or times. Reversed: from the
+ * end to the start, for walking it the other way.
  */
-export function walkGpx(walk: WalkDetail): string {
+export function walkGpx(original: WalkDetail, reversed = false): string {
+	const walk = reversed ? reverseWalk(original) : original;
+	const name = trackName(walk, reversed);
 	const { author, license, note } = credit(walk);
 	const desc = [summary(walk), walk.description, note].filter(Boolean).join('\n\n');
 	const points = walk.geometry
@@ -54,14 +61,14 @@ export function walkGpx(walk: WalkDetail): string {
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Treinwandelaar" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata>
-    <name>${escape(walk.name)}</name>
+    <name>${escape(name)}</name>
     <desc>${escape(desc)}</desc>
     <author><name>${escape(author)}</name></author>
     <copyright author="${escape(author)}"><license>${license}</license></copyright>
     <link href="${escape(walk.sourceUrl)}"><text>Bron</text></link>
   </metadata>
   <trk>
-    <name>${escape(walk.name)}</name>
+    <name>${escape(name)}</name>
     <desc>${escape(summary(walk))}</desc>
     <trkseg>
 ${points}
@@ -72,8 +79,8 @@ ${points}
 }
 
 /** "Langs de Proefdijk" → "langs-de-proefdijk.gpx": ASCII, so any browser keeps the name. */
-export function gpxFilename(walk: WalkDetail): string {
-	const slug = walk.name
+export function gpxFilename(walk: WalkDetail, reversed = false): string {
+	const slug = trackName(walk, reversed)
 		.toLowerCase()
 		.normalize('NFD')
 		.replace(/[̀-ͯ]/g, '')

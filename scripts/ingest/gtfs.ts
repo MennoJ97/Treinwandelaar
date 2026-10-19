@@ -28,6 +28,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { haversine, type LngLat } from '../../src/lib/geo';
 import { openDb, transaction } from '../../src/lib/server/db';
 import { parseStretchId } from '../../src/lib/path';
+import { reversedFeederId } from '../../src/lib/server/feeders';
 import { WALKABLE_STATION_M, type PathStage, type PathStop } from '../../src/lib/types';
 import { gtfsTime, parseCsvLine } from '../lib/csv';
 import { compactGeometry } from '../lib/store';
@@ -194,7 +195,10 @@ async function loadRail(db: DatabaseSync, feedDate: string) {
 	);
 }
 
-/** Every route end too far from its station to walk, with both points. */
+/**
+ * Every route end too far from its station to walk, with both points: once for the way the walk
+ * goes, and once the other way round (station → its end, its start → station) for walking it reversed.
+ */
 function feederEnds(db: DatabaseSync): FeederEnd[] {
 	const rows = db
 		.prepare(
@@ -221,10 +225,17 @@ function feederEnds(db: DatabaseSync): FeederEnd[] {
 		// A stretch you planned and kept from a path's stage end has its rides under the stage end.
 		if (parseStretchId(r.id)) continue;
 		const line = JSON.parse(r.geometry) as LngLat[];
-		if ((r.start_station_m ?? 0) > WALKABLE_STATION_M && r.s1_lng != null && r.s1_lat != null)
-			ends.push({ walkId: r.id, side: 'start', route: line[0], station: [r.s1_lng, r.s1_lat] });
-		if ((r.end_station_m ?? 0) > WALKABLE_STATION_M && r.s2_lng != null && r.s2_lat != null)
-			ends.push({ walkId: r.id, side: 'end', route: line.at(-1)!, station: [r.s2_lng, r.s2_lat] });
+		const back = reversedFeederId(r.id);
+		if ((r.start_station_m ?? 0) > WALKABLE_STATION_M && r.s1_lng != null && r.s1_lat != null) {
+			const station: LngLat = [r.s1_lng, r.s1_lat];
+			ends.push({ walkId: r.id, side: 'start', route: line[0], station });
+			ends.push({ walkId: back, side: 'end', route: line[0], station });
+		}
+		if ((r.end_station_m ?? 0) > WALKABLE_STATION_M && r.s2_lng != null && r.s2_lat != null) {
+			const station: LngLat = [r.s2_lng, r.s2_lat];
+			ends.push({ walkId: r.id, side: 'end', route: line.at(-1)!, station });
+			ends.push({ walkId: back, side: 'start', route: line.at(-1)!, station });
+		}
 	}
 	return ends;
 }
@@ -279,8 +290,11 @@ function stageEnds(db: DatabaseSync): StageEnd[] {
 	return ends;
 }
 
-/** Bump when what loadFeeders stores changes, so the next run reloads the rides (2: their geometry). */
-const FEEDER_FORMAT = 2;
+/**
+ * Bump when what loadFeeders stores changes, so the next run reloads the rides (2: their geometry;
+ * 3: rides for walking each walk the other way round).
+ */
+const FEEDER_FORMAT = 3;
 
 /**
  * The same string, kept once: CSV fields are new strings on every row, and a long one (a headsign) is
@@ -580,7 +594,11 @@ async function findRides(db: DatabaseSync, ends: FeederEnd[], stages: StageEnd[]
 
 	const stranded: typeof near = [];
 	for (const n of near)
-		if (!addRides(n.end.walkId, [n.end.side], tripsNear(n.route), n.route, n.station))
+		if (
+			!addRides(n.end.walkId, [n.end.side], tripsNear(n.route), n.route, n.station) &&
+			// The way the walk goes is the one to fix; the reversed rides follow from it.
+			!n.end.walkId.startsWith(reversedFeederId(''))
+		)
 			stranded.push(n);
 	if (stranded.length) suggestStations(stations, stranded, stationOf, byTrip, trips, routes);
 

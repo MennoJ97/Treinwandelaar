@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WalkListItem } from './types';
 import {
 	alongSentences,
+	reverseWalk,
 	walkDescription,
 	walkHeading,
 	walkPath,
@@ -158,5 +159,47 @@ describe("a walk's own page", () => {
 			})
 		).toEqual([]);
 		expect(alongSentences(base, null)).toEqual([]);
+	});
+});
+
+describe('reverseWalk', () => {
+	const walk = {
+		...base,
+		geometry: [
+			[4.9, 51.6],
+			[4.8, 51.59],
+			[4.78, 51.58]
+		] as [number, number][],
+		along: {
+			places: ['Molenschot', 'Ulvenhout'],
+			nature: ['Chaamse Bossen', 'Mastbos'],
+			sights: [],
+			cover: {},
+			surface: { paved: 0, unpaved: 0 }
+		}
+	};
+
+	it('swaps the ends and turns the line around', () => {
+		const r = reverseWalk({ ...walk, startStationM: 100, endStationM: 2500 });
+		expect([r.startStation, r.endStation]).toEqual(['BD', 'GZ']);
+		expect([r.startStationName, r.startPlace, r.startStationM]).toEqual(['Breda', 'Breda', 2500]);
+		expect(r.geometry).toEqual([
+			[4.78, 51.58],
+			[4.8, 51.59],
+			[4.9, 51.6]
+		]);
+		expect(r.id).toBe(walk.id);
+	});
+
+	it('lists what it passes in the new walking order', () => {
+		const r = reverseWalk(walk);
+		expect(r.along?.places).toEqual(['Ulvenhout', 'Molenschot']);
+		expect(r.along?.nature).toEqual(['Mastbos', 'Chaamse Bossen']);
+	});
+
+	it('leaves the walk it was given alone, and turns back into it', () => {
+		const r = reverseWalk(walk);
+		expect(walk.geometry[0]).toEqual([4.9, 51.6]);
+		expect(reverseWalk(r)).toEqual(walk);
 	});
 });

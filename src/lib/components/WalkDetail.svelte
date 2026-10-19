@@ -48,6 +48,10 @@
 		/** Works and disruptions on this walk's train routes that day. */
 		disruptions: Disruption[];
 		onclose: () => void;
+		/** The walk is shown the other way round (`walk` is turned around already). */
+		reversed?: boolean;
+		/** Turn the walk around, or back. */
+		onreverse?: () => void;
 		/** After a save, with the walk as the server now has it. */
 		onsaved: (walk: WalkDetail) => void;
 	}
@@ -64,6 +68,8 @@
 		onrides,
 		disruptions,
 		onclose,
+		reversed = false,
+		onreverse,
 		onsaved
 	}: Props = $props();
 
@@ -187,7 +193,9 @@
 		}
 		const controller = new AbortController();
 		feeders = { status: 'loading' };
-		fetch(`/api/walks/${encodeURIComponent(walk.id)}/feeders?date=${date}`, {
+		// Turned around, the buses run the other way: station → its end, its start → station.
+		const params = new URLSearchParams({ date, ...(reversed && { reverse: '1' }) });
+		fetch(`/api/walks/${encodeURIComponent(walk.id)}/feeders?${params}`, {
 			signal: controller.signal
 		})
 			.then(async (res) => {
@@ -416,10 +424,24 @@
 	<header>
 		<button type="button" class="back" onclick={onclose}>Alle wandelingen</button>
 		<h2>{walk.name}</h2>
-		<p class="route">
-			<span class="kind">{COLLECTION_LABELS[walk.collection]}:</span>
-			{startLabel(walk)} naar {walk.isLoop ? 'hetzelfde station' : endLabel(walk)}
-		</p>
+		<div class="route-row">
+			<p class="route">
+				<span class="kind">{COLLECTION_LABELS[walk.collection]}:</span>
+				{startLabel(walk)} naar {walk.isLoop ? 'hetzelfde station' : endLabel(walk)}
+				{#if reversed && walk.isLoop}<span class="muted">(andersom)</span>{/if}
+			</p>
+			{#if onreverse}
+				<button
+					type="button"
+					class="reverse"
+					aria-pressed={reversed}
+					title={walk.isLoop
+						? 'Het rondje de andere kant op lopen'
+						: 'Van het eind naar het begin lopen'}
+					onclick={onreverse}><span aria-hidden="true">⇄</span> Andersom</button
+				>
+			{/if}
+		</div>
 	</header>
 
 	{#if walk.photos.length}
@@ -686,10 +708,15 @@
 		>
 		{#if walk.nsUrl}<a href={walk.nsUrl} target="_blank" rel="noreferrer">Wandeling op ns.nl</a
 			>{/if}
-		<!-- Wandelnet's own file where it has one; otherwise ours, built from the route line. -->
-		{#if walk.gpxUrl}<a href={walk.gpxUrl} target="_blank" rel="noreferrer">GPX downloaden</a>
-		{:else}<a href="/api/walks/{encodeURIComponent(walk.id)}/gpx" download data-sveltekit-reload
+		<!-- Wandelnet's own file where it has one; otherwise ours, built from the route line. Turned
+		     around, always ours: theirs runs the one way. -->
+		{#if walk.gpxUrl && !reversed}<a href={walk.gpxUrl} target="_blank" rel="noreferrer"
 				>GPX downloaden</a
+			>
+		{:else}<a
+				href="/api/walks/{encodeURIComponent(walk.id)}/gpx{reversed ? '?reverse=1' : ''}"
+				download
+				data-sveltekit-reload>{reversed ? 'GPX andersom downloaden' : 'GPX downloaden'}</a
 			>{/if}
 		{#if walk.source === 'osm'}
 			<a href={osmNoteUrl(walk.geometry[0])} target="_blank" rel="noreferrer"
@@ -738,9 +765,34 @@
 		letter-spacing: -0.01em;
 	}
 
-	.route {
+	.route-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 4px 12px;
 		margin: 2px 0 0;
+	}
+
+	.route {
+		margin: 0;
 		color: var(--muted);
+	}
+
+	.reverse {
+		flex: none;
+		padding: 3px 10px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--ink);
+		cursor: pointer;
+		font-size: var(--step--1);
+	}
+
+	.reverse[aria-pressed='true'] {
+		border-color: var(--path);
+		background: var(--path);
+		color: var(--on-accent);
 	}
 
 	.route .kind {

@@ -1,4 +1,10 @@
-import { WALKABLE_STATION_M, type Cover, type WalkAlong, type WalkListItem } from './types';
+import {
+	WALKABLE_STATION_M,
+	type Cover,
+	type WalkAlong,
+	type WalkListItem,
+	type WalkSummary
+} from './types';
 
 const needsBusAt = (metres: number | null) => (metres ?? 0) > WALKABLE_STATION_M;
 
@@ -11,6 +17,33 @@ export const startLabel = (w: WalkListItem) =>
 
 export const endLabel = (w: WalkListItem) =>
 	(needsBusAt(w.endStationM) ? w.endPlace : w.endStationName) ?? w.endPlace ?? '?';
+
+/**
+ * The same walk the other way round: stations, route ends and line swapped, and what it passes in
+ * the new walking order. A loop keeps its station and goes round the other way. The id stays, so your
+ * status, rating and notes are the walk's whichever way you walk it.
+ */
+export function reverseWalk<T extends WalkSummary & { along?: WalkAlong | null }>(w: T): T {
+	return {
+		...w,
+		startStation: w.endStation,
+		endStation: w.startStation,
+		startStationName: w.endStationName,
+		endStationName: w.startStationName,
+		startPlace: w.endPlace,
+		endPlace: w.startPlace,
+		startStationM: w.endStationM,
+		endStationM: w.startStationM,
+		geometry: [...w.geometry].reverse(),
+		...(w.along && {
+			along: {
+				...w.along,
+				places: [...w.along.places].reverse(),
+				nature: [...w.along.nature].reverse()
+			}
+		})
+	};
+}
 
 /** Where Wandelnet takes reports of problems on a route (blocked paths, missing signs…). */
 export const WANDELNET_MELDPUNT = 'https://www.wandelnet.nl/meldpunt-wandelen';

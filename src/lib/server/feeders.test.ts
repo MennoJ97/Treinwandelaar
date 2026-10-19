@@ -82,4 +82,19 @@ describe('feederKeys', () => {
 		});
 		expect(feederKeys('pad:pieterpad-deel-1:GN-e3').end).toBe('pad:pieterpad-deel-1:e3');
 	});
+
+	it('turned around, takes the rides stored for the other way', () => {
+		expect(feederKeys('wandelnet:123', true)).toEqual({
+			start: 'reverse:wandelnet:123',
+			end: 'reverse:wandelnet:123'
+		});
+	});
+
+	it('turned around, swaps a stretch’s stage ends, which have rides both ways', () => {
+		expect(feederKeys('pad:pieterpad-deel-1:e2-e4', true)).toEqual({
+			start: 'pad:pieterpad-deel-1:e4',
+			end: 'pad:pieterpad-deel-1:e2'
+		});
+		expect(feederKeys('pad:pieterpad-deel-1:GN-e3', true).start).toBe('pad:pieterpad-deel-1:e3');
+	});
 });

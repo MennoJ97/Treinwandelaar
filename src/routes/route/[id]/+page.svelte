@@ -93,6 +93,7 @@
 		<p class="actions">
 			<a class="primary" href={home}>Op de kaart, met treinen vanaf jouw station</a>
 			<a href="/api/walks/{encodeURIComponent(walk.id)}/gpx">GPX downloaden</a>
+			<a href="/api/walks/{encodeURIComponent(walk.id)}/gpx?reverse=1">GPX andersom</a>
 		</p>
 
 		{#if data.related.prev || data.related.next}

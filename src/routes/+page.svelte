@@ -26,6 +26,7 @@
 		endLabel,
 		needsBus,
 		osmCredit,
+		reverseWalk,
 		startLabel,
 		walkPath,
 		walkTitle,
@@ -209,6 +210,7 @@
 		if (id) url.searchParams.set('route', id);
 		else url.searchParams.delete('route');
 		url.searchParams.delete('walk');
+		url.searchParams.delete('reverse');
 		goto(url, { reset: false, replace: true });
 	}
 
@@ -347,14 +349,31 @@
 	let details = $state.raw<Record<string, WalkDetailData>>({});
 	const detail = (id: string) =>
 		details[id] ?? (data.selected?.id === id ? data.selected : undefined);
-	const selected = $derived((selectedId && detail(selectedId)) || null);
-	/** A stretch you planned yourself isn't in the list; the map shows it all the same. */
+	/** Walking the open walk the other way round (?reverse=1): it, its trains and its map turned around. */
+	const reversed = $derived(page.url.searchParams.get('reverse') === '1');
+	const selected = $derived.by(() => {
+		const walk = (selectedId && detail(selectedId)) || null;
+		return walk && reversed ? reverseWalk(walk) : walk;
+	});
+	/**
+	 * A stretch you planned yourself isn't in the list; the map shows it all the same. The open walk
+	 * is drawn as you'd walk it, so its start and end markers follow a reversal.
+	 */
 	const mapWalks = $derived(
-		(selected && !visible.some((w) => w.id === selected.id)
-			? [...visible, selected]
+		(selected
+			? visible.some((w) => w.id === selected.id)
+				? visible.map((w) => (w.id === selected.id ? selected : w))
+				: [...visible, selected]
 			: visible
 		).filter((w) => w.geometry.length)
 	);
+
+	function reverse() {
+		const url = new URL(page.url.href);
+		if (reversed) url.searchParams.delete('reverse');
+		else url.searchParams.set('reverse', '1');
+		goto(url, { reset: false, replace: true });
+	}
 
 	/**
 	 * The list row under the mouse (or keyboard focus), drawn out on the map. Mouse only: a tap on a
@@ -431,6 +450,8 @@
 		const url = new URL(page.url.href);
 		if (id) url.searchParams.set('walk', id);
 		else url.searchParams.delete('walk');
+		// Another walk (or none) starts the right way round.
+		url.searchParams.delete('reverse');
 		goto(url, { reset: false, replaceState });
 	}
 
@@ -557,6 +578,8 @@
 					onrides={(r) => (feederLines = r)}
 					disruptions={walkDisruptions(selected)}
 					onclose={() => select(null)}
+					{reversed}
+					onreverse={reverse}
 					{onsaved}
 				/>
 			{/key}

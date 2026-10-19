@@ -122,7 +122,9 @@ create table if not exists gtfs_stop_time (
 ) without rowid;
 
 -- Buses (and trams, metros) between a route end too far to walk and its station, from the same GTFS
--- feed: only the trips that run between stops near the two. One row per trip and walk end.
+-- feed: only the trips that run between stops near the two. One row per trip and walk end. Rides for
+-- walking a walk the other way round are under walk_id 'reverse:<walk id>', with start and end as
+-- you'd walk it then.
 create table if not exists feeder_trip (
 	walk_id text not null,
 	side text not null,               -- 'start': station → route start; 'end': route end → station

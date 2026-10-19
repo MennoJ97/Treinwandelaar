@@ -71,6 +71,14 @@ describe('walkGpx', () => {
 		expect(gpx).toContain('Langs de Amstel &amp; de Vecht.');
 		expect(gpx).toContain('Amsterdam Centraal – Weesp, 14,2 km (LAW-route)');
 	});
+
+	it('runs from the end to the start when reversed, and says so', () => {
+		const gpx = walkGpx(walk(), true);
+		const points = [...gpx.matchAll(/<trkpt lat="([\d.]+)"/g)].map((m) => m[1]);
+		expect(points).toEqual(['52.30768', '52.35', '52.37887']);
+		expect(gpx).toContain('<name>Pelgrimspad 01: Amsterdam – Weesp (omgekeerd)</name>');
+		expect(gpx).toContain('Weesp – Amsterdam Centraal, 14,2 km (LAW-route)');
+	});
 });
 
 describe('gpxFilename', () => {
@@ -78,5 +86,9 @@ describe('gpxFilename', () => {
 		expect(gpxFilename(walk({ name: 'Rondje Ée & Zuiderzeepad' }))).toBe(
 			'rondje-ee-zuiderzeepad.gpx'
 		);
+	});
+
+	it('names the reversed file apart', () => {
+		expect(gpxFilename(walk(), true)).toBe('pelgrimspad-01-amsterdam-weesp-omgekeerd.gpx');
 	});
 });
