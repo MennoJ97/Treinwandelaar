@@ -653,7 +653,11 @@
 		>
 		{#if walk.nsUrl}<a href={walk.nsUrl} target="_blank" rel="noreferrer">Wandeling op ns.nl</a
 			>{/if}
-		{#if walk.gpxUrl}<a href={walk.gpxUrl} target="_blank" rel="noreferrer">GPX downloaden</a>{/if}
+		<!-- Wandelnet's own file where it has one; otherwise ours, built from the route line. -->
+		{#if walk.gpxUrl}<a href={walk.gpxUrl} target="_blank" rel="noreferrer">GPX downloaden</a>
+		{:else}<a href="/api/walks/{encodeURIComponent(walk.id)}/gpx" download data-sveltekit-reload
+				>GPX downloaden</a
+			>{/if}
 		{#if walk.source === 'osm'}
 			<a href={osmNoteUrl(walk.geometry[0])} target="_blank" rel="noreferrer"
 				>Kaartfout melden bij OpenStreetMap</a
