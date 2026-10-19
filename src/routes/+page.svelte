@@ -586,6 +586,7 @@
 					bind:from={stretch.from}
 					bind:to={stretch.to}
 					onplan={(from, to) => select(stretchId(path!.id, from, to))}
+					onclose={() => pickRoute('')}
 				/>
 			{/if}
 

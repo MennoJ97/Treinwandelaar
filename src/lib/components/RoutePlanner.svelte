@@ -14,6 +14,8 @@
 		to: string | null;
 		/** Open the stretch from `from` to `to`, with its trains. */
 		onplan: (from: string, to: string) => void;
+		/** Leave the route: back to all walks. */
+		onclose: () => void;
 	}
 
 	let {
@@ -22,7 +24,8 @@
 		reachBack,
 		from = $bindable(),
 		to = $bindable(),
-		onplan
+		onplan,
+		onclose
 	}: Props = $props();
 
 	/** A stretch longer than this without a station is worth pointing out: no day walk there. */
@@ -64,6 +67,7 @@
 </script>
 
 <section class="planner" aria-label="Zelf etappes plannen op {path.name}">
+	<button type="button" class="all" onclick={onclose}>Alle wandelingen</button>
 	<h2>{path.name}</h2>
 	<p class="about">
 		{km(path.km)} km, langs {stations} stations binnen loopafstand{villages
@@ -136,6 +140,21 @@
 	.planner {
 		padding: 12px 0 4px;
 		border-bottom: 1px solid var(--line);
+	}
+
+	/* Like the way back from a walk: the same link, in the same place. */
+	.all {
+		margin: 0 20px 2px;
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--rail);
+		cursor: pointer;
+		font-size: var(--step--1);
+	}
+
+	.all::before {
+		content: '‹ ';
 	}
 
 	h2 {
