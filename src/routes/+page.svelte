@@ -322,6 +322,11 @@
 
 	/** The open walk's chosen trains out and back, drawn faintly under it on the map. */
 	let tripLegs = $state.raw<TripLeg[][]>([]);
+	/** And its chosen buses between station and route, where they run (empty: unknown). */
+	let feederLines = $state.raw<{ start: [number, number][]; end: [number, number][] }>({
+		start: [],
+		end: []
+	});
 
 	async function fetchWalk(id: string, signal: AbortSignal): Promise<WalkDetailData> {
 		const r = await fetch(`/api/walks/${encodeURIComponent(id)}`, { signal });
@@ -430,6 +435,7 @@
 				{selectedId}
 				hoveredId={selected ? null : hoveredId}
 				trips={selected ? tripLegs : []}
+				rides={selected ? feederLines : undefined}
 				credit={mapCredit}
 				onselect={select}
 				onlocate={(code) => (home = code)}
@@ -456,6 +462,7 @@
 					trip={trip?.day === day ? trip : null}
 					ontrip={keepTrip}
 					onlegs={(t) => (tripLegs = t)}
+					onrides={(r) => (feederLines = r)}
 					disruptions={walkDisruptions(selected)}
 					onclose={() => select(null)}
 					{onsaved}

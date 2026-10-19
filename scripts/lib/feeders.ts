@@ -32,6 +32,14 @@ export interface StopTime {
 	/** False where the timetable says you can't get on (pickup_type 1) or off (drop_off_type 1). */
 	pickup: boolean;
 	dropOff: boolean;
+	/** How far along the trip's shape (shape_dist_traveled), where the feed says. */
+	dist?: number;
+}
+
+/** A point of a GTFS shape, with how far along it is in the same unit as StopTime.dist. */
+export interface ShapePoint {
+	at: LngLat;
+	dist: number;
 }
 
 export interface Ride {
@@ -81,6 +89,52 @@ export function feederRide(
 		}
 	}
 	return best;
+}
+
+/**
+ * Where a ride runs along its trip's shape: the stretch between the distances of the stop you board
+ * at and the one you get off at, its ends interpolated. Empty when the shape doesn't cover it.
+ */
+export function cutShape(points: ShapePoint[], from: number, to: number): LngLat[] {
+	if (points.length < 2 || points.some((p) => !Number.isFinite(p.dist))) return [];
+	// A stop may sit a metre past the shape's last point; the shape is still the right one.
+	from = Math.max(from, points[0].dist);
+	to = Math.min(to, points.at(-1)!.dist);
+	if (!(to > from)) return [];
+	const lerp = (a: ShapePoint, b: ShapePoint, d: number): LngLat => {
+		const t = b.dist > a.dist ? (d - a.dist) / (b.dist - a.dist) : 0;
+		return [a.at[0] + t * (b.at[0] - a.at[0]), a.at[1] + t * (b.at[1] - a.at[1])];
+	};
+	const line: LngLat[] = [];
+	for (let i = 1; i < points.length; i++) {
+		const [a, b] = [points[i - 1], points[i]];
+		if (b.dist < from) continue;
+		if (!line.length) line.push(lerp(a, b, from));
+		if (b.dist >= to) {
+			line.push(lerp(a, b, to));
+			break;
+		}
+		line.push(b.at);
+	}
+	return line;
+}
+
+/**
+ * Where a ride runs without a shape: from stop to stop, of the calls we have between boarding and
+ * getting off (at least those two).
+ */
+export function stopsLine(
+	calls: StopTime[],
+	ride: Pick<Ride, 'board' | 'alight'>,
+	stopAt: Map<string, LngLat>
+): LngLat[] {
+	return calls
+		.filter((c) => c.seq >= ride.board.seq && c.seq <= ride.alight.seq)
+		.sort((a, b) => a.seq - b.seq)
+		.flatMap((c) => {
+			const at = stopAt.get(c.stopId);
+			return at ? [at] : [];
+		});
 }
 
 /** Each stop within `maxM` of a station, with the station's code (the nearest, if several). */

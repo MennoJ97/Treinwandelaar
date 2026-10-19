@@ -33,6 +33,8 @@
 		hoveredId?: string | null;
 		/** The open walk's chosen trains out and back, one list of legs per trip: drawn faintly under it. */
 		trips?: TripLeg[][];
+		/** Where its chosen buses between station and route run; empty where we don't know. */
+		rides?: { start: [number, number][]; end: [number, number][] };
 		/** Source line for the routes, next to the map data's own attribution. */
 		credit: string;
 		onselect: (id: string | null) => void;
@@ -51,6 +53,7 @@
 		selectedId,
 		hoveredId = null,
 		trips = [],
+		rides = { start: [], end: [] },
 		credit,
 		onselect,
 		onlocate,
@@ -157,8 +160,8 @@
 
 	/**
 	 * How you get to the open walk and home again: the chosen trains along their tracks, and a bus
-	 * between station and route where it's too far to walk (straight: we know the ride's times, not
-	 * its streets). Changes are dots, named once you zoom in.
+	 * between station and route where it's too far to walk: the chosen ride along its streets, or
+	 * straight from station to route while no ride is known. Changes are dots, named once you zoom in.
 	 */
 	const transitFeatures = $derived.by(() => {
 		const line = (kind: 'train' | 'bus', coordinates: [number, number][]) => ({
@@ -185,9 +188,11 @@
 		};
 		const startStation = at(walk.startStation);
 		const endStation = at(walk.endStation);
-		if (startStation && (walk.startStationM ?? 0) > WALKABLE_STATION_M)
+		if (rides.start.length > 1) features.push(line('bus', rides.start));
+		else if (startStation && (walk.startStationM ?? 0) > WALKABLE_STATION_M)
 			features.push(line('bus', [startStation, walk.geometry[0]]));
-		if (endStation && (walk.endStationM ?? 0) > WALKABLE_STATION_M)
+		if (rides.end.length > 1) features.push(line('bus', rides.end));
+		else if (endStation && (walk.endStationM ?? 0) > WALKABLE_STATION_M)
 			features.push(line('bus', [walk.geometry.at(-1)!, endStation]));
 		return { type: 'FeatureCollection' as const, features };
 	});

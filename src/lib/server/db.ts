@@ -133,8 +133,16 @@ create table if not exists feeder_trip (
 	dep integer not null,             -- seconds after midnight of the service day
 	arr integer not null,
 	stop_m integer not null,          -- the walk between the stop and the route end, straight line
+	geometry_id integer,              -- feeder_geometry: where it runs, board to alight
 	primary key (walk_id, side, trip_id)
 ) without rowid;
+
+-- Where the feeder rides run from boarding to getting off, along the GTFS shape (or stop to stop):
+-- one row per way, shared by every trip that takes it.
+create table if not exists feeder_geometry (
+	id integer primary key,
+	geometry text not null            -- JSON [[lng,lat],...], simplified like walks.geometry
+);
 
 create table if not exists feeder_service_date (
 	service_id text not null,
@@ -183,6 +191,11 @@ function migrate(db: DatabaseSync) {
 		db.exec(`alter table walks add column collection text not null default 'ns-wandeling'`);
 	if (!columns.has('wandelnet_duplicate'))
 		db.exec(`alter table walks add column wandelnet_duplicate integer not null default 0`);
+	const feederColumns = (
+		db.prepare('pragma table_info(feeder_trip)').all() as { name: string }[]
+	).map((c) => c.name);
+	if (!feederColumns.includes('geometry_id'))
+		db.exec('alter table feeder_trip add column geometry_id integer');
 
 	// The personal layer used to be single-user (keyed by walk_id alone); its rows go to LOCAL_USER.
 	const userColumns = (db.prepare('pragma table_info(user_walk)').all() as { name: string }[]).map(
