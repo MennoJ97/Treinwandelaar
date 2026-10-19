@@ -20,6 +20,8 @@
 		home: string;
 		reachability: Reachability;
 		selectedId: string | null;
+		/** The walk under the pointer in the list: drawn out on the map, which stays where it is. */
+		hoveredId?: string | null;
 		/** Source line for the routes, next to the map data's own attribution. */
 		credit: string;
 		onselect: (id: string | null) => void;
@@ -35,6 +37,7 @@
 		home,
 		reachability,
 		selectedId,
+		hoveredId = null,
 		credit,
 		onselect,
 		onlocate,
@@ -127,6 +130,7 @@
 	});
 
 	const selectedFilter = (): FilterSpecification => ['==', ['get', 'id'], selectedId ?? ''];
+	const hoveredFilter = (): FilterSpecification => ['==', ['get', 'id'], hoveredId ?? ''];
 
 	/** The selected walk's stations are labelled by its own end markers; don't name them twice. */
 	const stationLabelFilter = (): FilterSpecification => {
@@ -237,6 +241,43 @@
 			paint: {
 				'line-color': cssVar('--ink'),
 				'line-width': ['interpolate', ['linear'], ['zoom'], 7, 4, 12, 7]
+			}
+		});
+		// The walk you're pointing at in the list. Signal yellow, outlined in ink: ink alone vanishes
+		// among the near walks (the band closest to it in either theme), and yellow is the one colour
+		// no route has. Its ends go unnamed; the list row says them.
+		m.addLayer({
+			id: 'walks-hover-casing',
+			type: 'line',
+			source: 'walks',
+			filter: hoveredFilter(),
+			layout: { 'line-cap': 'round', 'line-join': 'round' },
+			paint: {
+				'line-color': cssVar('--ink'),
+				'line-width': ['interpolate', ['linear'], ['zoom'], 7, 6.5, 12, 10]
+			}
+		});
+		m.addLayer({
+			id: 'walks-hover',
+			type: 'line',
+			source: 'walks',
+			filter: hoveredFilter(),
+			layout: { 'line-cap': 'round', 'line-join': 'round' },
+			paint: {
+				'line-color': cssVar('--signal'),
+				'line-width': ['interpolate', ['linear'], ['zoom'], 7, 3.5, 12, 6]
+			}
+		});
+		m.addLayer({
+			id: 'walk-ends-hover',
+			type: 'circle',
+			source: 'walk-ends',
+			filter: hoveredFilter(),
+			paint: {
+				'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 4, 12, 6],
+				'circle-color': cssVar('--signal'),
+				'circle-stroke-color': cssVar('--ink'),
+				'circle-stroke-width': 2
 			}
 		});
 		// Invisible wide line so thin routes are easy to click and tap.
@@ -432,6 +473,16 @@
 		(map.getSource('walks') as GeoJSONSource | undefined)?.setData(data[0]);
 		(map.getSource('stations') as GeoJSONSource | undefined)?.setData(data[1]);
 		(map.getSource('walk-ends') as GeoJSONSource | undefined)?.setData(data[2]);
+	});
+
+	// Only the filter: running a finger down the list shouldn't send the map flying around.
+	$effect(() => {
+		if (!ready || !map) return;
+		const filter = hoveredFilter();
+		// Mid style swap the layers are briefly gone; addOverlay applies the hover then.
+		if (!map.getLayer('walks-hover')) return;
+		for (const id of ['walks-hover-casing', 'walks-hover', 'walk-ends-hover'])
+			map.setFilter(id, filter);
 	});
 
 	$effect(() => {

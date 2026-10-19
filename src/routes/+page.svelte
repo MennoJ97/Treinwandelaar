@@ -250,6 +250,18 @@
 		details[id] ?? (data.selected?.id === id ? data.selected : undefined);
 	const selected = $derived((selectedId && detail(selectedId)) || null);
 
+	/**
+	 * The list row under the mouse (or keyboard focus), drawn out on the map. Mouse only: a tap on a
+	 * phone opens the walk anyway. The row is gone once a walk opens, so it never gets a leave event.
+	 */
+	let hoveredId = $state<string | null>(null);
+	const hover = (id: string) => (e: PointerEvent) => {
+		if (e.pointerType === 'mouse') hoveredId = id;
+	};
+	const unhover = (id: string) => () => {
+		if (hoveredId === id) hoveredId = null;
+	};
+
 	// The planner's date and time, kept from walk to walk. Stamped with the list's day: pick another
 	// travel day there and the planner starts over from it.
 	let trip = $state<{ date: string; time: string; day: string } | null>(null);
@@ -301,6 +313,7 @@
 				return; // superseded by another click, or the walk is gone: stay where you are
 			}
 		}
+		hoveredId = null;
 		const url = new URL(page.url.href);
 		if (id) url.searchParams.set('walk', id);
 		else url.searchParams.delete('walk');
@@ -362,6 +375,7 @@
 				{home}
 				{reachability}
 				{selectedId}
+				hoveredId={selected ? null : hoveredId}
 				credit={mapCredit}
 				onselect={select}
 				onlocate={(code) => (home = code)}
@@ -505,7 +519,14 @@
 						{@const hits = walkDisruptions(w)}
 						{@const b = minutesBack(w)}
 						<li>
-							<button type="button" onclick={() => select(w.id)}>
+							<button
+								type="button"
+								onclick={() => select(w.id)}
+								onpointerenter={hover(w.id)}
+								onpointerleave={unhover(w.id)}
+								onfocus={() => (hoveredId = w.id)}
+								onblur={unhover(w.id)}
+							>
 								<span class="name">{w.name}</span>
 								<span class="stations">
 									{startLabel(w)}
