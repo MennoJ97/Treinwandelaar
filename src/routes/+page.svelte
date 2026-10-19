@@ -171,11 +171,13 @@
 		return () => controller.abort();
 	});
 
+	/** Plan on another route, or none (''): from the filter, the planner, or a route on the map. */
 	function pickRoute(id: string) {
 		stretch = { from: null, to: null };
 		const url = new URL(page.url.href);
 		if (id) url.searchParams.set('route', id);
 		else url.searchParams.delete('route');
+		url.searchParams.delete('walk');
 		goto(url, { reset: false, replace: true });
 	}
 
@@ -203,6 +205,29 @@
 	}
 	let noBus = $state(false);
 	let hideDisrupted = $state(false);
+
+	/**
+	 * The whole LAW routes and streekpaden, faint under the walks: off by default, so the map stays
+	 * about walks you can reach by train. Remembered per browser, like the home station.
+	 */
+	const ROUTES_KEY = 'treinwandelaar.routes';
+	let showRoutes = $state(readShowRoutes());
+
+	function readShowRoutes(): boolean {
+		try {
+			return typeof localStorage !== 'undefined' && localStorage.getItem(ROUTES_KEY) === '1';
+		} catch {
+			return false;
+		}
+	}
+
+	$effect(() => {
+		try {
+			localStorage.setItem(ROUTES_KEY, showRoutes ? '1' : '0');
+		} catch {
+			/* private mode: fine, just not remembered */
+		}
+	});
 	let sort = $state<'travel' | 'rating' | 'distance' | 'name'>('travel');
 
 	/** Small screens fold the filters away so the list starts under the map; this says how many bite. */
@@ -427,6 +452,8 @@
 				hoveredId={selected ? null : hoveredId}
 				credit={mapCredit}
 				onselect={select}
+				routeKinds={showRoutes && !routeId ? shown : []}
+				onroute={pickRoute}
 				onlocate={(code) => (home = code)}
 				obscured={mapCovered}
 			/>
@@ -543,6 +570,12 @@
 					<label
 						><input type="checkbox" bind:checked={hideDisrupted} /> Zonder werkzaamheden of storingen</label
 					>
+					{#if data.paths.length}
+						<label
+							><input type="checkbox" bind:checked={showRoutes} /> Hele LAW-routes en streekpaden op de
+							kaart</label
+						>
+					{/if}
 				</div>
 				<label class="sort">
 					<span>Sorteer op</span>
