@@ -1,8 +1,9 @@
 # Indexed on purpose since 2026-10-16 (the page carried noindex before): the
 # public demo at / is what search engines see, walks built from OpenStreetMap.
 # One of five indexed sites on mhjansen.nl; the rest send X-Robots-Tag: noindex.
-# No sitemap: there is one public page, and Authentik would answer
-# /sitemap.xml with a login redirect (it is not an Unauthenticated Path).
+# Each walk has its own page under /route/, all listed in /sitemap.xml; the
+# Sitemap: line at the end is added by +server.ts next to this file, which knows
+# the site's origin (the domain is not in the repository).
 
 # AI training crawlers are not welcome; AI *search* crawlers are (OAI-SearchBot,
 # ChatGPT-User, Claude-SearchBot, Claude-User, PerplexityBot and the like fetch

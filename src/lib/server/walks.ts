@@ -1,5 +1,13 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { Collection, WalkDetail, WalkPhoto, WalkSource, WalkSummary } from '../types';
+import { parseStretchId } from '../path';
+import type {
+	Collection,
+	WalkDetail,
+	WalkListItem,
+	WalkPhoto,
+	WalkSource,
+	WalkSummary
+} from '../types';
 import { plannedWalk } from './paths';
 
 /* Row shape shared by the summary and detail queries. */
@@ -36,7 +44,7 @@ const SELECT = `
 	left join stations s2 on s2.code = w.end_station
 	left join user_walk u on u.walk_id = w.id and u.username = ?`;
 
-function toSummary(r: WalkRow): WalkSummary {
+function toListItem(r: WalkRow): WalkListItem {
 	return {
 		id: r.id,
 		name: r.name,
@@ -57,10 +65,14 @@ function toSummary(r: WalkRow): WalkSummary {
 		reviewCount: r.review_count,
 		thumbnail: r.thumbnail,
 		status: r.status,
-		ownRating: r.own_rating,
-		geometry: JSON.parse(r.geometry)
+		ownRating: r.own_rating
 	};
 }
+
+const toSummary = (r: WalkRow): WalkSummary => ({
+	...toListItem(r),
+	geometry: JSON.parse(r.geometry)
+});
 
 /**
  * Which walks a viewer may see (`user` null: the anonymous demo). Wandelnet's and NS's data is for
@@ -89,19 +101,96 @@ export function wandelnetUpdated(db: DatabaseSync): string | null {
 	return row?.date ?? null;
 }
 
-/* The personal fields (status, own rating, notes) are those of `user`; the demo has none. */
-export function listWalks(db: DatabaseSync, user: string | null) {
+/**
+ * Every walk `user` may see, without its line: the lines are most of the bytes, and the page fetches
+ * them on its own (walkLines), so its HTML stays small. The personal fields (status, own rating,
+ * notes) are those of `user`; the demo has none.
+ */
+export function listWalks(db: DatabaseSync, user: string | null): WalkListItem[] {
 	const rows = db
 		.prepare(`${SELECT} where ${visibleTo(user)} order by w.name`)
 		.all(user ?? '') as unknown as WalkRow[];
-	return rows.map(toSummary);
+	return rows.map(toListItem);
 }
 
-/** A walk the ingest made (or you kept), or else a stretch of a path planned on request. */
-export function getWalk(db: DatabaseSync, id: string, user: string | null): WalkDetail | null {
+/** The lines of the walks listWalks gives, as a JSON object of id → [[lng, lat], ...]. */
+export function walkLines(db: DatabaseSync, user: string | null): string {
+	const rows = db
+		.prepare(`select w.id, w.geometry from walks w where ${visibleTo(user)}`)
+		.all() as { id: string; geometry: string }[];
+	// The column is JSON already: no need to parse a megabyte only to write it out again.
+	return `{${rows.map((r) => `${JSON.stringify(r.id)}:${r.geometry}`).join(',')}}`;
+}
+
+/**
+ * The walks an anonymous visitor may see, with the day their data last changed (YYYY-MM-DD, null
+ * when unknown): the sitemap's URLs. Never Wandelnet's or NS's, which are for personal use only.
+ */
+export function publicWalks(db: DatabaseSync): { id: string; changedOn: string | null }[] {
+	return db
+		.prepare(
+			`select w.id, w.changed_on as changedOn from walks w where ${visibleTo(null)} order by w.id`
+		)
+		.all() as unknown as { id: string; changedOn: string | null }[];
+}
+
+/**
+ * For a walk's own page: the other day walks of the path it is a stretch of (with that path's
+ * name), and other walks from or to its stations.
+ */
+export function relatedWalks(db: DatabaseSync, walk: WalkSummary, user: string | null) {
+	const pathId = parseStretchId(walk.id)?.pathId ?? null;
+	const path = pathId
+		? (db
+				.prepare(`select id, name from paths w where id = ? and ${visibleTo(user)}`)
+				.get(pathId) as { id: string; name: string } | undefined)
+		: undefined;
+	const stages = path
+		? (
+				db
+					.prepare(`${SELECT} where ${visibleTo(user)} and substr(w.id, 1, ?) = ? and w.id <> ?`)
+					.all(user ?? '', path.id.length + 1, `${path.id}:`, walk.id) as unknown as WalkRow[]
+			)
+				.filter((r) => parseStretchId(r.id)?.pathId === path.id)
+				.map(toListItem)
+		: [];
+	const stations = [walk.startStation, walk.endStation].filter((s): s is string => !!s);
+	const nearby = stations.length
+		? (
+				db
+					.prepare(
+						`${SELECT} where ${visibleTo(user)} and w.id <> ?
+						 and (w.start_station in (?, ?) or w.end_station in (?, ?)) order by w.name limit 40`
+					)
+					.all(
+						user ?? '',
+						walk.id,
+						stations[0],
+						stations.at(-1)!,
+						stations[0],
+						stations.at(-1)!
+					) as unknown as WalkRow[]
+			)
+				.map(toListItem)
+				.filter((w) => !stages.some((s) => s.id === w.id))
+				.slice(0, 12)
+		: [];
+	return { path: path ?? null, stages, nearby };
+}
+
+/**
+ * A walk the ingest made (or you kept), or else a stretch of a path planned on request (unless
+ * `planned` is false: a walk's own page is only for the walks that are stored).
+ */
+export function getWalk(
+	db: DatabaseSync,
+	id: string,
+	user: string | null,
+	{ planned = true } = {}
+): WalkDetail | null {
 	const r = db.prepare(`${SELECT} where w.id = ? and ${visibleTo(user)}`).get(user ?? '', id) as
 		(WalkRow & Record<string, string | null>) | undefined;
-	if (!r) return plannedWalk(db, id, user);
+	if (!r) return planned ? plannedWalk(db, id, user) : null;
 	const photos = db
 		.prepare('select url, caption, source from walk_photos where walk_id = ? order by sort')
 		.all(id) as unknown as WalkPhoto[];

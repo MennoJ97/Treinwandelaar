@@ -51,6 +51,9 @@ export interface WalkSummary {
 	geometry: [number, number][];
 }
 
+/** A walk in the list, without its line: the page loads the lines on their own (/api/walk-lines). */
+export type WalkListItem = Omit<WalkSummary, 'geometry'>;
+
 /** A whole LAW route or streekpad, to plan your own stretches of it from station to station. */
 export interface PathSummary {
 	/** 'pad:<slug>' or 'osm:<slug>'; a stretch of it is the walk '<id>:<from code>-<to code>'. */

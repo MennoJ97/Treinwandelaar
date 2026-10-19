@@ -32,22 +32,43 @@ export interface WalkRecord {
 	photos: { url: string; caption: string | null }[];
 }
 
+/**
+ * What a walk's page shows: when one of these changes, so does the walk's changed_on (the sitemap's
+ * lastmod). Not updated_at, which every ingest rewrites, nor wandelnet_duplicate, which only decides
+ * who sees the walk.
+ */
+const CONTENT_COLUMNS = [
+	'collection',
+	'name',
+	'start_place',
+	'end_place',
+	'start_station',
+	'end_station',
+	'start_station_m',
+	'end_station_m',
+	'is_loop',
+	'distance_km',
+	'stated_distance_km',
+	'description',
+	'accessibility',
+	'features',
+	'geometry',
+	'rating_avg',
+	'review_count',
+	'source_url',
+	'gpx_url'
+];
+
 const UPSERT = `
-	insert into walks (id, source, source_id, collection, name, start_place, end_place, start_station,
-		end_station, start_station_m, end_station_m, is_loop, distance_km, stated_distance_km, description,
-		accessibility, features, geometry, rating_avg, review_count, source_url, gpx_url,
-		wandelnet_duplicate, updated_at)
-	values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-	on conflict(id) do update set collection = excluded.collection, name = excluded.name,
-		start_place = excluded.start_place, end_place = excluded.end_place,
-		start_station = excluded.start_station, end_station = excluded.end_station,
-		start_station_m = excluded.start_station_m, end_station_m = excluded.end_station_m,
-		is_loop = excluded.is_loop, distance_km = excluded.distance_km,
-		stated_distance_km = excluded.stated_distance_km, description = excluded.description,
-		accessibility = excluded.accessibility, features = excluded.features, geometry = excluded.geometry,
-		rating_avg = excluded.rating_avg, review_count = excluded.review_count,
-		source_url = excluded.source_url, gpx_url = excluded.gpx_url,
-		wandelnet_duplicate = excluded.wandelnet_duplicate, updated_at = excluded.updated_at`;
+	insert into walks (id, source, source_id, ${CONTENT_COLUMNS.join(', ')}, wandelnet_duplicate,
+		updated_at, changed_on)
+	values (?, ?, ?, ${CONTENT_COLUMNS.map(() => '?').join(', ')}, ?, datetime('now'), date('now'))
+	on conflict(id) do update set
+		${CONTENT_COLUMNS.map((c) => `${c} = excluded.${c}`).join(', ')},
+		wandelnet_duplicate = excluded.wandelnet_duplicate, updated_at = excluded.updated_at,
+		-- Every assignment reads the row as it was, so this compares old and new content.
+		changed_on = case when ${CONTENT_COLUMNS.map((c) => `walks.${c} is not excluded.${c}`).join(' or ')}
+			then excluded.changed_on else walks.changed_on end`;
 
 /** Simplified to ~8 m and rounded to ~1 m: small enough to ship every route to the map at once. */
 export function compactGeometry(track: LngLat[]): LngLat[] {

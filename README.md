@@ -111,7 +111,14 @@ single-application forward-auth provider (paths are matched without the host), l
 ^/_app/
 ^/api/
 ^/robots\.txt$
+^/route/
+^/sitemap\.xml$
 ```
+
+Each walk a visitor may see also has a page of its own, `/route/<walk id>`, with its title, distance
+and stations as plain HTML for search engines, and `/route/` lists them all; `/sitemap.xml` names
+those pages, each with the day an ingest last changed the walk's data (`walks.changed_on`). They
+follow the same rule as the map: without a session, only the OpenStreetMap walks.
 
 Visitors then get the demo, and the "Inloggen" link (`/login`) sends them through Authentik and back.
 Deploy the app and run `npm run ingest:osm` before you add the paths, and keep `ANONYMOUS_ACCESS` unset

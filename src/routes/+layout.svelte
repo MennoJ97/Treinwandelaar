@@ -8,7 +8,6 @@
 
 <svelte:head>
 	<link rel="icon" type="image/svg+xml" href={favicon} />
-	<title>treinwandelaar</title>
 </svelte:head>
 
 {@render children()}

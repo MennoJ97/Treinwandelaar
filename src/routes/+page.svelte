@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { FAMILY_SITE } from '$app/env/public';
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import WalkMap from '#lib/components/WalkMap.svelte';
@@ -26,6 +27,8 @@
 		needsBus,
 		osmCredit,
 		startLabel,
+		walkPath,
+		walkTitle,
 		WANDELNET_MELDPUNT,
 		wandelnetCredit
 	} from '#lib/walk.js';
@@ -33,9 +36,26 @@
 
 	let { data }: PageProps = $props();
 
+	/**
+	 * The walks' lines, fetched apart from the page data: they are most of its bytes, and inlined in
+	 * the HTML they took it near the 2 MB a search engine reads of a page. Until they are in, the list
+	 * works and the map shows no walks.
+	 */
+	let lines = $state.raw<Record<string, [number, number][]>>({});
+	onMount(() => {
+		fetch('/api/walk-lines')
+			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+			.then((l) => (lines = l))
+			.catch(() => {
+				/* the list still works; the map just has no walks */
+			});
+	});
+
 	/** Walks you saved a status or rating on since the page loaded, in place of their loaded copy. */
 	let saved = $state.raw<Record<string, WalkSummary>>({});
-	const walks = $derived(data.walks.map((w) => saved[w.id] ?? w));
+	const walks = $derived(
+		data.walks.map((w): WalkSummary => saved[w.id] ?? { ...w, geometry: lines[w.id] ?? [] })
+	);
 
 	// --- Home station (remembered per browser) ------------------------------------------------------
 	const HOME_KEY = 'treinwandelaar.home';
@@ -330,7 +350,10 @@
 	const selected = $derived((selectedId && detail(selectedId)) || null);
 	/** A stretch you planned yourself isn't in the list; the map shows it all the same. */
 	const mapWalks = $derived(
-		selected && !visible.some((w) => w.id === selected.id) ? [...visible, selected] : visible
+		(selected && !visible.some((w) => w.id === selected.id)
+			? [...visible, selected]
+			: visible
+		).filter((w) => w.geometry.length)
 	);
 
 	/**
@@ -411,7 +434,22 @@
 		goto(url, { reset: false, replaceState });
 	}
 
+	/**
+	 * A row in the list is a link to the walk's own page, for search engines and for opening it in a
+	 * new tab; a plain click opens it here, on the map, as before.
+	 */
+	const openHere = (id: string) => (e: MouseEvent) => {
+		if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+		e.preventDefault();
+		select(id);
+	};
+
 	const km = (n: number) => n.toLocaleString('nl-NL', { maximumFractionDigits: 1 });
+
+	const TITLE = 'Treinwandelaar: dagwandelingen van station naar station';
+	const DESCRIPTION =
+		'Dagwandelingen met de trein in Nederland: LAW-routes, streekpaden en lokale wandelingen die bij ' +
+		'een station beginnen en eindigen, met de reistijd vanaf jouw station.';
 
 	// The demo shows only OpenStreetMap walks; signed-in users get those Wandelnet doesn't cover.
 	const hasOsm = $derived(walks.some((w) => w.source === 'osm'));
@@ -422,6 +460,24 @@
 	);
 </script>
 
+<svelte:head>
+	<title>{selected ? walkTitle(selected) : TITLE}</title>
+	<meta name="description" content={DESCRIPTION} />
+	<link rel="canonical" href="{page.url.origin}/" />
+	<meta property="og:type" content="website" />
+	<meta property="og:title" content={TITLE} />
+	<meta property="og:description" content={DESCRIPTION} />
+	<meta property="og:url" content="{page.url.origin}/" />
+	{@html `<script type="application/ld+json">${JSON.stringify({
+		'@context': 'https://schema.org',
+		'@type': 'WebSite',
+		name: 'Treinwandelaar',
+		url: `${page.url.origin}/`,
+		inLanguage: 'nl',
+		description: DESCRIPTION
+	}).replaceAll('<', '\\u003c')}</script>`}
+</svelte:head>
+
 <svelte:window bind:scrollY />
 
 <div class="app">
@@ -431,12 +487,12 @@
 	     with the family's light/dark switch last. Outside the panel on purpose: family.js only wires
 	     up switches that exist when the page loads, and the panel re-renders. -->
 		<header class="topbar">
-			<h1 class="brand">
+			<div class="brand">
 				{#if FAMILY_SITE}<a class="up" href={FAMILY_SITE}>{new URL(FAMILY_SITE).host}</a><span
 						class="sep"
 						aria-hidden="true">/</span
 					>{/if}<a class="here" href="/"><Mark />treinwandelaar</a>
-			</h1>
+			</div>
 			<div class="bar-actions">
 				<button type="button" class="sources-toggle" popovertarget="sources">Bronnen</button>
 				<button class="theme-toggle" aria-label="Donkere modus" hidden></button>
@@ -506,6 +562,7 @@
 			{/key}
 		{:else}
 			<header class="intro">
+				<h1>Dagwandelingen met de trein, van station naar station</h1>
 				<StationPicker stations={data.stations} bind:value={home} label="Ik vertrek vanaf" />
 			</header>
 			{#if data.demo}
@@ -657,7 +714,8 @@
 				{#if routeId}
 					{visible.length} kant-en-klare dagwandelingen op deze route
 				{:else}
-					{visible.length} van {walks.length} wandelingen
+					{visible.length} van {walks.length} wandelingen ·
+					<a href="/route/" data-sveltekit-reload>alle op een rij</a>
 				{/if}
 			</p>
 
@@ -668,9 +726,10 @@
 						{@const hits = walkDisruptions(w)}
 						{@const b = minutesBack(w)}
 						<li>
-							<button
-								type="button"
-								onclick={() => select(w.id)}
+							<a
+								href={walkPath(w.id)}
+								data-sveltekit-preload-data="off"
+								onclick={openHere(w.id)}
 								onpointerenter={hover(w.id)}
 								onpointerleave={unhover(w.id)}
 								onfocus={() => (hoveredId = w.id)}
@@ -698,7 +757,7 @@
 									{#if w.ratingAvg != null}<span>★ {w.ratingAvg.toLocaleString('nl-NL')}</span>{/if}
 									<span class="kind">{COLLECTION_LABELS[w.collection]}</span>
 								</span>
-							</button>
+							</a>
 						</li>
 					{/each}
 				</ul>
@@ -861,6 +920,16 @@
 
 	.intro {
 		padding: 18px 20px 6px;
+	}
+
+	.intro h1 {
+		margin: 0 0 12px;
+		font-size: var(--step-1);
+		line-height: 1.25;
+	}
+
+	.count a {
+		color: inherit;
 	}
 
 	.route-pick {
@@ -1058,18 +1127,16 @@
 		padding: 0;
 	}
 
-	.walks button {
+	.walks a {
 		display: grid;
 		width: 100%;
 		padding: 10px 20px;
-		border: 0;
 		border-bottom: 1px solid var(--line);
-		background: none;
-		text-align: left;
-		cursor: pointer;
+		color: inherit;
+		text-decoration: none;
 	}
 
-	.walks button:hover {
+	.walks a:hover {
 		background: var(--paper);
 	}
 

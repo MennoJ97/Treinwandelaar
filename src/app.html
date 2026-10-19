@@ -4,35 +4,14 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
-		<!-- Indexed on purpose since 2026-10-16 (noindex before); see static/robots.txt. Search
-		     engines see what an anonymous visitor sees: the demo, walks built from OpenStreetMap. -->
-		<meta
-			name="description"
-			content="Dagwandelingen met de trein in Nederland: wandel van station naar station."
-		/>
-		<link rel="canonical" href="%treinwandelaar.origin%/" />
-		<script type="application/ld+json">
-			{
-				"@context": "https://schema.org",
-				"@type": "WebSite",
-				"name": "treinwandelaar",
-				"url": "%treinwandelaar.origin%/",
-				"inLanguage": "nl",
-				"description": "Dagwandelingen met de trein, van station naar station."
-			}
-		</script>
+		<!-- Indexed on purpose since 2026-10-16 (noindex before); see src/routes/robots.txt. Search
+		     engines see what an anonymous visitor sees: the demo, walks built from OpenStreetMap. Each
+		     page sets its own title, description, canonical and og:title/description/url. -->
 		<!-- Link preview card (WhatsApp, Signal, iMessage). The image is hosted on the family site
 		     (FAMILY_SITE), not here: Authentik guards every path but its Unauthenticated Paths, and a
 		     preview fetcher asking for /og.png would get the login redirect. Rendered by
 		     web/landing/make-og.py in the compose repo. -->
-		<meta property="og:type" content="website" />
 		<meta property="og:site_name" content="%treinwandelaar.host%" />
-		<meta property="og:title" content="treinwandelaar" />
-		<meta
-			property="og:description"
-			content="Dagwandelingen met de trein, van station naar station."
-		/>
-		<meta property="og:url" content="%treinwandelaar.origin%/" />
 		<meta property="og:locale" content="nl_NL" />
 		<meta name="twitter:card" content="summary_large_image" />
 		<!-- %treinwandelaar.*% are filled by hooks.server.ts (lib/template.ts). The family site's

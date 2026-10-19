@@ -152,8 +152,8 @@ export function keepPlannedWalk(db: DatabaseSync, walk: WalkDetail) {
 	db.prepare(
 		`insert or ignore into walks (id, source, source_id, collection, name, start_place, end_place,
 			start_station, end_station, start_station_m, end_station_m, is_loop, distance_km, description,
-			features, geometry, review_count, source_url, updated_at)
-		 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, '[]', ?, 0, ?, datetime('now'))`
+			features, geometry, review_count, source_url, updated_at, changed_on)
+		 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, '[]', ?, 0, ?, datetime('now'), date('now'))`
 	).run(
 		walk.id,
 		walk.source,

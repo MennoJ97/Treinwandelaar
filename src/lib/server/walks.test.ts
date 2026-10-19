@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { initSchema, LOCAL_USER } from './db';
-import { getWalk, listWalks, updateUserWalk } from './walks';
+import { getWalk, listWalks, publicWalks, updateUserWalk, walkLines } from './walks';
 
 function addWalk(db: DatabaseSync, id: string, source: string, collection: string, duplicate = 0) {
 	db.prepare(
@@ -89,5 +89,34 @@ describe('demo visibility', () => {
 
 	it("gives signed-in users everything but OSM's copies of Wandelnet walks", () => {
 		expect(ids('menno')).toEqual(['osm:law', 'osm:lokaal', 'pad:law', 'w:1']);
+	});
+});
+
+describe('public pages', () => {
+	const db = freshDb();
+	addWalk(db, 'osm:law', 'osm', 'law');
+	addWalk(db, 'osm:copy', 'osm', 'law', 1);
+	addWalk(db, 'pad:law', 'wandelnet', 'law');
+
+	it('lists only OpenStreetMap walks in the sitemap, with the day their data changed', () => {
+		db.prepare(`update walks set changed_on = '2026-10-12' where id = 'osm:law'`).run();
+		expect(publicWalks(db)).toEqual([
+			{ id: 'osm:copy', changedOn: null },
+			{ id: 'osm:law', changedOn: '2026-10-12' }
+		]);
+	});
+
+	it('sends the lines of the walks the viewer may see, and only those', () => {
+		expect(Object.keys(JSON.parse(walkLines(db, null))).sort()).toEqual(['osm:copy', 'osm:law']);
+		expect(JSON.parse(walkLines(db, 'menno'))['pad:law']).toEqual([
+			[5, 52],
+			[5.1, 52.1]
+		]);
+		expect(listWalks(db, null)[0]).not.toHaveProperty('geometry');
+	});
+
+	it('has no page for a stretch planned on request', () => {
+		expect(getWalk(db, 'osm:law', null, { planned: false })).toMatchObject({ id: 'osm:law' });
+		expect(getWalk(db, 'osm:nopath:UT-GD', null, { planned: false })).toBeNull();
 	});
 });
