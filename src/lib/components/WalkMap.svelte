@@ -6,7 +6,15 @@
 		GeoJSONSource,
 		Map as MlMap
 	} from 'maplibre-gl';
-	import type { Collection, PathDetail, Reachability, Station, WalkSummary } from '#lib/types.js';
+	import {
+		WALKABLE_STATION_M,
+		type Collection,
+		type PathDetail,
+		type Reachability,
+		type Station,
+		type TripLeg,
+		type WalkSummary
+	} from '#lib/types.js';
 	import { nearest } from '#lib/geo.js';
 	import { travelBand } from '#lib/itinerary.js';
 	import { endLabel, startLabel } from '#lib/walk.js';
@@ -24,6 +32,10 @@
 		selectedId: string | null;
 		/** The walk under the pointer in the list: drawn out on the map, which stays where it is. */
 		hoveredId?: string | null;
+		/** The open walk's chosen trains out and back, one list of legs per trip: drawn faintly under it. */
+		trips?: TripLeg[][];
+		/** Where its chosen buses between station and route run; empty where we don't know. */
+		rides?: { start: [number, number][]; end: [number, number][] };
 		/** Source line for the routes, next to the map data's own attribution. */
 		credit: string;
 		onselect: (id: string | null) => void;
@@ -45,6 +57,8 @@
 		reachability,
 		selectedId,
 		hoveredId = null,
+		trips = [],
+		rides = { start: [], end: [] },
 		credit,
 		onselect,
 		routeKinds = [],
@@ -151,6 +165,45 @@
 			: []
 	});
 
+	/**
+	 * How you get to the open walk and home again: the chosen trains along their tracks, and a bus
+	 * between station and route where it's too far to walk: the chosen ride along its streets, or
+	 * straight from station to route while no ride is known. Changes are dots, named once you zoom in.
+	 */
+	const transitFeatures = $derived.by(() => {
+		const line = (kind: 'train' | 'bus', coordinates: [number, number][]) => ({
+			type: 'Feature' as const,
+			properties: { kind },
+			geometry: { type: 'LineString' as const, coordinates }
+		});
+		const point = (name: string, coordinates: [number, number]) => ({
+			type: 'Feature' as const,
+			properties: { name },
+			geometry: { type: 'Point' as const, coordinates }
+		});
+		const features: (ReturnType<typeof line> | ReturnType<typeof point>)[] = [];
+		const walk = walks.find((w) => w.id === selectedId);
+		if (!walk) return { type: 'FeatureCollection' as const, features };
+		for (const legs of trips)
+			legs.forEach((leg, i) => {
+				if (leg.line.length > 1) features.push(line(leg.isBus ? 'bus' : 'train', leg.line));
+				if (i < legs.length - 1 && leg.line.length) features.push(point(leg.to, leg.line.at(-1)!));
+			});
+		const at = (code: string | null) => {
+			const s = code ? stations.find((s) => s.code === code) : undefined;
+			return s ? ([s.lng, s.lat] as [number, number]) : null;
+		};
+		const startStation = at(walk.startStation);
+		const endStation = at(walk.endStation);
+		if (rides.start.length > 1) features.push(line('bus', rides.start));
+		else if (startStation && (walk.startStationM ?? 0) > WALKABLE_STATION_M)
+			features.push(line('bus', [startStation, walk.geometry[0]]));
+		if (rides.end.length > 1) features.push(line('bus', rides.end));
+		else if (endStation && (walk.endStationM ?? 0) > WALKABLE_STATION_M)
+			features.push(line('bus', [walk.geometry.at(-1)!, endStation]));
+		return { type: 'FeatureCollection' as const, features };
+	});
+
 	const selectedFilter = (): FilterSpecification => ['==', ['get', 'id'], selectedId ?? ''];
 	const EMPTY = { type: 'FeatureCollection' as const, features: [] };
 	/** Whether the whole routes were ever switched on: from then on the source keeps them. */
@@ -198,6 +251,7 @@
 		m.addSource('stations', { type: 'geojson', data: stationFeatures });
 		m.addSource('walk-ends', { type: 'geojson', data: endFeatures });
 		m.addSource('path', { type: 'geojson', data: pathFeatures });
+		m.addSource('transit', { type: 'geojson', data: transitFeatures });
 		// Every whole route: a few hundred KB, fetched only once you ask to see them.
 		m.addSource('routes', { type: 'geojson', data: routesWanted ? '/api/paths' : EMPTY });
 
@@ -229,8 +283,92 @@
 			0
 		];
 
+		// The open walk's trains and buses, at the bottom of the stack: thin and grey like the
+		// basemap's own railways, so the walk stays what you look at. Rails get sleepers once there's
+		// room for them; a bus is dashed.
+		const isTrain: FilterSpecification = ['==', ['get', 'kind'], 'train'];
+		m.addLayer({
+			id: 'transit-casing',
+			type: 'line',
+			source: 'transit',
+			filter: ['==', ['geometry-type'], 'LineString'],
+			layout: { 'line-join': 'round' },
+			paint: {
+				'line-color': cssVar('--map-casing'),
+				'line-opacity': 0.8,
+				'line-width': ['interpolate', ['linear'], ['zoom'], 7, 3.5, 12, 5.5]
+			}
+		});
+		m.addLayer({
+			id: 'transit-rail',
+			type: 'line',
+			source: 'transit',
+			filter: isTrain,
+			layout: { 'line-join': 'round' },
+			paint: {
+				'line-color': cssVar('--transit'),
+				'line-width': ['interpolate', ['linear'], ['zoom'], 7, 1.5, 12, 3]
+			}
+		});
+		m.addLayer({
+			id: 'transit-rail-sleepers',
+			type: 'line',
+			source: 'transit',
+			filter: isTrain,
+			minzoom: 9,
+			layout: { 'line-join': 'round' },
+			paint: {
+				'line-color': cssVar('--map-casing'),
+				'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1, 12, 1.75],
+				'line-dasharray': [2, 2]
+			}
+		});
+		m.addLayer({
+			id: 'transit-bus',
+			type: 'line',
+			source: 'transit',
+			filter: ['==', ['get', 'kind'], 'bus'],
+			paint: {
+				'line-color': cssVar('--transit'),
+				'line-width': ['interpolate', ['linear'], ['zoom'], 7, 1.5, 12, 2.5],
+				'line-dasharray': [2, 1.5]
+			}
+		});
+		m.addLayer({
+			id: 'transit-changes',
+			type: 'circle',
+			source: 'transit',
+			filter: ['==', ['geometry-type'], 'Point'],
+			paint: {
+				'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 2.5, 12, 4],
+				'circle-color': cssVar('--map-casing'),
+				'circle-stroke-color': cssVar('--transit'),
+				'circle-stroke-width': 1.5
+			}
+		});
+		m.addLayer({
+			id: 'transit-change-labels',
+			type: 'symbol',
+			source: 'transit',
+			filter: ['==', ['geometry-type'], 'Point'],
+			minzoom: 9,
+			layout: {
+				'text-field': ['concat', 'overstappen in ', ['get', 'name']],
+				'text-size': 11,
+				'text-offset': [0, 0.9],
+				'text-anchor': 'top',
+				'text-font': ['Noto Sans Regular'],
+				'text-optional': true
+			},
+			paint: {
+				'text-color': cssVar('--muted'),
+				'text-halo-color': cssVar('--surface'),
+				'text-halo-width': 1.5
+			}
+		});
 		// Every LAW route and streekpad, faint, so the stretches without a day walk show too: you can
-		// still plan on them. Under everything else, and thinner than any walk.
+		// still plan on them. Under every walk (only the open walk's trains and buses lie lower), and
+		// thinner than any walk.
 		m.addLayer({
 			id: 'routes-line',
 			type: 'line',
@@ -544,12 +682,19 @@
 
 	$effect(() => {
 		if (!ready || !map) return;
-		const data = [walkFeatures, stationFeatures, endFeatures, pathFeatures] as const;
+		const data = [
+			walkFeatures,
+			stationFeatures,
+			endFeatures,
+			pathFeatures,
+			transitFeatures
+		] as const;
 		// Mid style swap the sources are briefly gone; addOverlay picks up the latest data then.
 		(map.getSource('walks') as GeoJSONSource | undefined)?.setData(data[0]);
 		(map.getSource('stations') as GeoJSONSource | undefined)?.setData(data[1]);
 		(map.getSource('walk-ends') as GeoJSONSource | undefined)?.setData(data[2]);
 		(map.getSource('path') as GeoJSONSource | undefined)?.setData(data[3]);
+		(map.getSource('transit') as GeoJSONSource | undefined)?.setData(data[4]);
 	});
 
 	/** A route picked to plan on: show all of it, unless a walk is open (that frames itself). */

@@ -3,6 +3,13 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { initSchema } from './db';
 import { mapStation, mapTrip, normalizeTime, pruneTripCache } from './ns';
+import { buildRailNetwork } from './railMap';
+
+const track = (from: string, to: string, coordinates: number[][]) => ({
+	type: 'Feature',
+	properties: { from, to },
+	geometry: { type: 'LineString', coordinates }
+});
 
 // Recorded from the real Reisinformatie API v3 (Utrecht Centraal → Culemborg), trimmed to the fields we use
 // (share links shortened).
@@ -66,7 +73,7 @@ describe('NS mapping', () => {
 	});
 
 	it('maps a recorded real response', () => {
-		const [t] = recorded.trips.map(mapTrip);
+		const [t] = recorded.trips.map((r: unknown) => mapTrip(r));
 		expect(t.departure).toBe('2026-10-17T08:50:00+02:00'); // actualDateTime is null → planned
 		expect(t.arrival).toBe('2026-10-17T09:08:00+02:00');
 		expect(t.plannedDurationMin).toBe(18);
@@ -79,6 +86,44 @@ describe('NS mapping', () => {
 			from: 'Utrecht Centraal'
 		});
 		expect(t.shareUrl).toMatch(/^https:\/\/www\.ns\.nl\/rpx\?ctx=/);
+	});
+
+	it('draws a leg along the tracks between its stops, or straight without the network', () => {
+		const stop = (uicCode: string, lng: number, lat: number) => ({ uicCode, lng, lat });
+		const leg = {
+			...trip.legs[0],
+			product: { displayName: 'NS Intercity', type: 'TRAIN' },
+			stops: [stop('1', 5.0, 52.0), stop('3', 5.02, 52.0)]
+		};
+		// The intercity skips the middle station; the track there bends north.
+		const network = buildRailNetwork([
+			track('a', 'b', [
+				[5.0, 52.0],
+				[5.01, 52.003]
+			]),
+			track('b', 'c', [
+				[5.01, 52.003],
+				[5.02, 52.0]
+			])
+		]);
+		const codes = new Map([
+			['1', 'A'],
+			['3', 'C']
+		]);
+		const straight = mapTrip({ legs: [leg] }).legs[0].line;
+		expect(straight).toEqual([
+			[5.0, 52.0],
+			[5.02, 52.0]
+		]);
+		const onTrack = mapTrip({ legs: [leg] }, { network, codes }).legs[0].line;
+		expect(onTrack).toEqual([
+			[5.0, 52.0],
+			[5.01, 52.003],
+			[5.02, 52.0]
+		]);
+		// A bus doesn't run on rails.
+		const bus = { ...leg, product: { type: 'BUS' } };
+		expect(mapTrip({ legs: [bus] }, { network, codes }).legs[0].line).toEqual(straight);
 	});
 
 	it('maps both station payload shapes', () => {

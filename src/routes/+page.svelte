@@ -17,6 +17,7 @@
 		type PathDetail,
 		type Reachability,
 		type ReachabilityResponse,
+		type TripLeg,
 		type WalkDetail as WalkDetailData,
 		type WalkSummary
 	} from '#lib/types.js';
@@ -353,6 +354,14 @@
 		trip = { ...t, day };
 	}
 
+	/** The open walk's chosen trains out and back, drawn faintly under it on the map. */
+	let tripLegs = $state.raw<TripLeg[][]>([]);
+	/** And its chosen buses between station and route, where they run (empty: unknown). */
+	let feederLines = $state.raw<{ start: [number, number][]; end: [number, number][] }>({
+		start: [],
+		end: []
+	});
+
 	async function fetchWalk(id: string, signal: AbortSignal): Promise<WalkDetailData> {
 		const r = await fetch(`/api/walks/${encodeURIComponent(id)}`, { signal });
 		if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -459,6 +468,8 @@
 				{reachability}
 				{selectedId}
 				hoveredId={selected ? null : hoveredId}
+				trips={selected ? tripLegs : []}
+				rides={selected ? feederLines : undefined}
 				credit={mapCredit}
 				onselect={select}
 				routeKinds={showRoutes && !routeId ? shown : []}
@@ -467,6 +478,7 @@
 				obscured={mapCovered}
 			/>
 			<MapLegend
+				transit={!!selected}
 				homeName={homeStation?.name ?? ''}
 				dayLabel={dayLabel(day)}
 				loading={reachStatus === 'loading'}
@@ -485,6 +497,8 @@
 					{day}
 					trip={trip?.day === day ? trip : null}
 					ontrip={keepTrip}
+					onlegs={(t) => (tripLegs = t)}
+					onrides={(r) => (feederLines = r)}
 					disruptions={walkDisruptions(selected)}
 					onclose={() => select(null)}
 					{onsaved}

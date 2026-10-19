@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
 	busStation,
+	cutShape,
 	feederRide,
 	lineName,
 	stationStops,
 	stationsReached,
+	stopsLine,
 	stopsNear,
 	type StopTime
 } from './feeders';
@@ -56,6 +58,52 @@ describe('feederRide', () => {
 			s.stopId === 'drunen-markt' ? { ...s, pickup: false } : s
 		);
 		expect(feederRide(setDownOnly, 'end', route, station)?.board.stopId).toBe('drunen-kerk');
+	});
+});
+
+describe('cutShape', () => {
+	// A road east, then north: 100 units a side.
+	const shape = [
+		{ at: [0, 0] as [number, number], dist: 0 },
+		{ at: [1, 0] as [number, number], dist: 100 },
+		{ at: [1, 1] as [number, number], dist: 200 }
+	];
+
+	it('runs from the boarding stop to the one you get off at, along the road', () => {
+		expect(cutShape(shape, 50, 150)).toEqual([
+			[0.5, 0],
+			[1, 0],
+			[1, 0.5]
+		]);
+		expect(cutShape(shape, 10, 20)).toEqual([
+			[0.1, 0],
+			[0.2, 0]
+		]);
+	});
+
+	it('takes a stop just past the end as the end', () => {
+		expect(cutShape(shape, 150, 201)).toEqual([
+			[1, 0.5],
+			[1, 1]
+		]);
+	});
+
+	it('gives nothing for a shape without distances or a ride backwards', () => {
+		expect(cutShape(shape, 150, 50)).toEqual([]);
+		expect(cutShape([{ at: [0, 0], dist: NaN }, ...shape.slice(1)], 50, 150)).toEqual([]);
+	});
+});
+
+describe('stopsLine', () => {
+	it('joins the stops between boarding and getting off, in order', () => {
+		const stopAt = new Map(trip.map((s, i) => [s.stopId, [i, 0] as [number, number]]));
+		const calls = [...trip].reverse();
+		expect(stopsLine(calls, { board: trip[2], alight: trip[5] }, stopAt)).toEqual([
+			[2, 0],
+			[3, 0],
+			[4, 0],
+			[5, 0]
+		]);
 	});
 });
 

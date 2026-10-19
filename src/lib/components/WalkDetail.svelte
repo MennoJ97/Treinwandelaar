@@ -24,6 +24,7 @@
 		type Disruption,
 		type Feeders,
 		type Station,
+		type TripLeg,
 		type TripOption,
 		type WalkDetail
 	} from '#lib/types.js';
@@ -40,6 +41,10 @@
 		trip?: { date: string; time: string } | null;
 		/** Every change of date or time, so the next walk can start from it. */
 		ontrip?: (trip: { date: string; time: string }) => void;
+		/** The legs of the chosen trains out and back, one list per trip, to draw on the map. */
+		onlegs?: (trips: TripLeg[][]) => void;
+		/** Where the chosen buses between station and route run, to draw on the map; empty: unknown. */
+		onrides?: (rides: { start: [number, number][]; end: [number, number][] }) => void;
 		/** Works and disruptions on this walk's train routes that day. */
 		disruptions: Disruption[];
 		onclose: () => void;
@@ -47,8 +52,20 @@
 		onsaved: (walk: WalkDetail) => void;
 	}
 
-	let { walk, home, hasNsKey, demo, day, trip, ontrip, disruptions, onclose, onsaved }: Props =
-		$props();
+	let {
+		walk,
+		home,
+		hasNsKey,
+		demo,
+		day,
+		trip,
+		ontrip,
+		onlegs,
+		onrides,
+		disruptions,
+		onclose,
+		onsaved
+	}: Props = $props();
 
 	type Load<T> =
 		| { status: 'idle' }
@@ -300,6 +317,22 @@
 	}
 
 	const homeArrival = $derived(back.status === 'done' ? back.data[backIndex]?.arrival : null);
+
+	// The trains you picked, for the map; gone from it again when the walk closes.
+	$effect(() => {
+		const chosen = [
+			outbound.status === 'done' ? outbound.data[outIndex] : null,
+			back.status === 'done' ? back.data[backIndex] : null
+		];
+		onlegs?.(chosen.flatMap((t) => (t ? [t.legs] : [])));
+		return () => onlegs?.([]);
+	});
+
+	// And the buses you'd take between station and route, along their streets.
+	$effect(() => {
+		onrides?.({ start: startRide?.geometry ?? [], end: endRide?.geometry ?? [] });
+		return () => onrides?.({ start: [], end: [] });
+	});
 
 	// --- Personal layer -----------------------------------------------------------------------------
 	async function save(update: {

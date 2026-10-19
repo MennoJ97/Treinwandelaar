@@ -19,6 +19,7 @@ interface Row {
 	dep: number;
 	arr: number;
 	stop_m: number;
+	geometry: string | null;
 }
 
 /**
@@ -52,13 +53,23 @@ export function feederRides(db: DatabaseSync, walkId: string, ymd: string): Feed
 	if (!sides.size) return feeders;
 	const rows = db
 		.prepare(
-			`select f.side, f.line, f.operator, f.headsign, f.board, f.alight, f.dep, f.arr, f.stop_m
+			`select f.side, f.line, f.operator, f.headsign, f.board, f.alight, f.dep, f.arr, f.stop_m,
+				g.geometry
 			 from feeder_trip f
 			 join feeder_service_date d on d.service_id = f.service_id and d.date = ?
+			 left join feeder_geometry g on g.id = f.geometry_id
 			 where (f.walk_id = ? and f.side = 'start') or (f.walk_id = ? and f.side = 'end')
 			 order by f.dep, f.arr`
 		)
 		.all(ymd.replaceAll('-', ''), keys.start, keys.end) as unknown as Row[];
+	// Most of a day's rides take the same few ways: parse each once.
+	const geometries = new Map<string, [number, number][]>();
+	const geometry = (json: string | null) => {
+		if (!json) return [];
+		let line = geometries.get(json);
+		if (!line) geometries.set(json, (line = JSON.parse(json) as [number, number][]));
+		return line;
+	};
 	for (const r of rows) {
 		const list = feeders[r.side]!;
 		const ride: FeederRide = {
@@ -69,7 +80,8 @@ export function feederRides(db: DatabaseSync, walkId: string, ymd: string): Feed
 			to: r.alight,
 			departure: serviceTime(ymd, r.dep),
 			arrival: serviceTime(ymd, r.arr),
-			stopM: r.stop_m
+			stopM: r.stop_m,
+			geometry: geometry(r.geometry)
 		};
 		// Two lines running the same stretch at the same minute (or a trip listed twice): show one.
 		const last = list.at(-1);

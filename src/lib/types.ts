@@ -130,6 +130,8 @@ export interface TripLeg {
 	isBus: boolean;
 	direction: string | null;
 	cancelled: boolean;
+	/** Where it runs, [lng, lat] pairs: along the tracks for a train; empty when NS gives no stops. */
+	line: [number, number][];
 }
 
 export interface TripOption {
@@ -201,6 +203,8 @@ export interface FeederRide {
 	arrival: string;
 	/** Straight-line metres between the stop and the route end. */
 	stopM: number;
+	/** Where it runs from `from` to `to`, [lng, lat] pairs along its streets; empty when unknown. */
+	geometry: [number, number][];
 }
 
 /**
