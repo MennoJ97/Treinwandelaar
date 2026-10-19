@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { parseStretchId } from '../path';
 import type {
 	Collection,
+	PathStop,
 	WalkDetail,
 	WalkListItem,
 	WalkPhoto,
@@ -135,25 +136,44 @@ export function publicWalks(db: DatabaseSync): { id: string; changedOn: string |
 }
 
 /**
- * For a walk's own page: the other day walks of the path it is a stretch of (with that path's
- * name), and other walks from or to its stations.
+ * For a walk's own page: the day walks of the path it is a stretch of, in path order (with that
+ * path's name, and the stages just before and after it), and other walks from or to its stations.
  */
 export function relatedWalks(db: DatabaseSync, walk: WalkSummary, user: string | null) {
 	const pathId = parseStretchId(walk.id)?.pathId ?? null;
 	const path = pathId
 		? (db
-				.prepare(`select id, name from paths w where id = ? and ${visibleTo(user)}`)
-				.get(pathId) as { id: string; name: string } | undefined)
+				.prepare(`select id, name, stops from paths w where id = ? and ${visibleTo(user)}`)
+				.get(pathId) as { id: string; name: string; stops: string } | undefined)
 		: undefined;
-	const stages = path
-		? (
-				db
-					.prepare(`${SELECT} where ${visibleTo(user)} and substr(w.id, 1, ?) = ? and w.id <> ?`)
-					.all(user ?? '', path.id.length + 1, `${path.id}:`, walk.id) as unknown as WalkRow[]
-			)
-				.filter((r) => parseStretchId(r.id)?.pathId === path.id)
-				.map(toListItem)
-		: [];
+	let stages: WalkListItem[] = [];
+	let prev: WalkListItem | null = null;
+	let next: WalkListItem | null = null;
+	if (path) {
+		// Where each stop is along the path, to put its day walks in walking order.
+		const at = new Map(
+			(JSON.parse(path.stops) as PathStop[]).map((s) => [s.key, s.line * 1e6 + s.km])
+		);
+		const ends = (w: WalkListItem) => parseStretchId(w.id)!;
+		const all = (
+			db
+				.prepare(`${SELECT} where ${visibleTo(user)} and substr(w.id, 1, ?) = ?`)
+				.all(user ?? '', path.id.length + 1, `${path.id}:`) as unknown as WalkRow[]
+		)
+			.filter((r) => parseStretchId(r.id)?.pathId === path.id)
+			.map(toListItem)
+			.sort(
+				(a, b) =>
+					(at.get(ends(a).from) ?? Infinity) - (at.get(ends(b).from) ?? Infinity) ||
+					a.name.localeCompare(b.name, 'nl')
+			);
+		const i = all.findIndex((w) => w.id === walk.id);
+		const own = parseStretchId(walk.id)!;
+		// Only a stage that joins on: the cut can leave a gap, or overlap where two sections meet.
+		prev = i > 0 && ends(all[i - 1]).to === own.from ? all[i - 1] : null;
+		next = i >= 0 && i < all.length - 1 && ends(all[i + 1]).from === own.to ? all[i + 1] : null;
+		stages = all.filter((w) => w.id !== walk.id);
+	}
 	const stations = [walk.startStation, walk.endStation].filter((s): s is string => !!s);
 	const nearby = stations.length
 		? (
@@ -175,7 +195,7 @@ export function relatedWalks(db: DatabaseSync, walk: WalkSummary, user: string |
 				.filter((w) => !stages.some((s) => s.id === w.id))
 				.slice(0, 12)
 		: [];
-	return { path: path ?? null, stages, nearby };
+	return { path: path ? { id: path.id, name: path.name } : null, stages, prev, next, nearby };
 }
 
 /**
@@ -204,7 +224,8 @@ export function getWalk(
 		nsUrl: r.ns_url,
 		gpxUrl: r.gpx_url,
 		notes: r.notes,
-		photos
+		photos,
+		along: r.along ? JSON.parse(r.along) : null
 	};
 }
 

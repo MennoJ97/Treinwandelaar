@@ -9,28 +9,4 @@ export const csr = false;
 export const trailingSlash = 'always';
 
 /** Every walk on one page, by kind: a way in to each walk's page that needs no map or script. */
-export const load: PageServerLoad = ({ locals }) => ({
-	walks: listWalks(db(), locals.user).map(
-		({
-			id,
-			name,
-			collection,
-			isLoop,
-			distanceKm,
-			startStationName,
-			endStationName,
-			startPlace,
-			endPlace
-		}) => ({
-			id,
-			name,
-			collection,
-			isLoop,
-			distanceKm,
-			startStationName,
-			endStationName,
-			startPlace,
-			endPlace
-		})
-	)
-});
+export const load: PageServerLoad = ({ locals }) => ({ walks: listWalks(db(), locals.user) });

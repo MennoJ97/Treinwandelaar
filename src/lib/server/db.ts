@@ -54,7 +54,8 @@ create table if not exists walks (
 	gpx_url text,
 	wandelnet_duplicate integer not null default 0, -- an OSM walk that Wandelnet's data also has
 	updated_at text not null,         -- last ingest that wrote the row, changed or not
-	changed_on text                   -- YYYY-MM-DD the walk's data last changed: the sitemap's lastmod
+	changed_on text,                  -- YYYY-MM-DD the walk's data last changed: the sitemap's lastmod
+	along text                        -- JSON WalkAlong: places, nature, landscape along it (OSM only)
 );
 
 create table if not exists walk_photos (
@@ -195,6 +196,7 @@ function migrate(db: DatabaseSync) {
 		db.exec(`alter table walks add column wandelnet_duplicate integer not null default 0`);
 	// Rows from before changed_on: the last ingest wrote what they hold now, so their data changed
 	// on that day at the latest. Late rather than early, so a search engine never skips a change.
+	if (!columns.has('along')) db.exec('alter table walks add column along text');
 	if (!columns.has('changed_on')) {
 		db.exec('alter table walks add column changed_on text');
 		db.exec('update walks set changed_on = date(updated_at)');

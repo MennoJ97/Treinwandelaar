@@ -37,6 +37,7 @@ const walk = (over: Partial<WalkDetail> = {}): WalkDetail => ({
 	gpxUrl: null,
 	photos: [],
 	notes: null,
+	along: null,
 	...over
 });
 

@@ -3,6 +3,13 @@ import { publicWalks } from '#lib/server/walks.js';
 import { walkPath } from '#lib/walk.js';
 import type { RequestHandler } from './$types';
 
+/**
+ * The day the walk pages themselves last changed (their template: the title, the text around the
+ * data). A walk's lastmod is this or the day its data changed, whichever is later, so a change to
+ * every page shows once. Move it to the deploy day of any change that alters what the pages say.
+ */
+const WALK_PAGES_CHANGED_ON = '2026-10-19';
+
 const escape = (s: string) =>
 	s.replace(
 		/[&<>"']/g,
@@ -12,8 +19,8 @@ const escape = (s: string) =>
 /**
  * Every page an anonymous visitor may see: the home page, the index of walks and each walk built from
  * OpenStreetMap (never Wandelnet's, which are for personal use only). A walk's <lastmod> is the day
- * an ingest last changed its data (walks.changed_on); the two pages that only list them go without,
- * as a date there would be a guess.
+ * an ingest last changed its data (walks.changed_on) or the pages' template changed, if later; the
+ * two pages that only list them go without, as a date there would be a guess.
  */
 export const GET: RequestHandler = ({ url }) => {
 	const entry = (path: string, lastmod?: string | null) =>
@@ -23,7 +30,12 @@ export const GET: RequestHandler = ({ url }) => {
 		'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
 		entry('/'),
 		entry('/route/'),
-		...publicWalks(db()).map((w) => entry(walkPath(w.id), w.changedOn)),
+		...publicWalks(db()).map((w) =>
+			entry(
+				walkPath(w.id),
+				w.changedOn && w.changedOn > WALK_PAGES_CHANGED_ON ? w.changedOn : WALK_PAGES_CHANGED_ON
+			)
+		),
 		'</urlset>',
 		''
 	].join('\n');

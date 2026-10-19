@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { initSchema, LOCAL_USER } from './db';
-import { getWalk, listWalks, publicWalks, updateUserWalk, walkLines } from './walks';
+import { getWalk, listWalks, publicWalks, relatedWalks, updateUserWalk, walkLines } from './walks';
 
 function addWalk(db: DatabaseSync, id: string, source: string, collection: string, duplicate = 0) {
 	db.prepare(
@@ -118,5 +118,30 @@ describe('public pages', () => {
 	it('has no page for a stretch planned on request', () => {
 		expect(getWalk(db, 'osm:law', null, { planned: false })).toMatchObject({ id: 'osm:law' });
 		expect(getWalk(db, 'osm:nopath:UT-GD', null, { planned: false })).toBeNull();
+	});
+});
+
+describe("a path's stages", () => {
+	const db = freshDb();
+	db.exec(`insert into stations (code, name, lat, lng) values ('A', 'Aa', 52, 5), ('B', 'Bee', 52, 5.1),
+		('C', 'Cee', 52, 5.2), ('D', 'Dee', 52, 5.3)`);
+	db.prepare(
+		`insert into paths (id, source, collection, name, km, lines, stops, stages, source_url, updated_at)
+		 values ('osm:pad', 'osm', 'law', 'Proefpad', 30, '[]', ?, '[]', 'u', '2026-10-19')`
+	).run(
+		JSON.stringify(
+			['A', 'B', 'C', 'D'].map((code, i) => ({ key: code, code, line: 0, km: i * 10 }))
+		)
+	);
+	for (const id of ['osm:pad:C-D', 'osm:pad:A-B', 'osm:pad:B-C']) addWalk(db, id, 'osm', 'law');
+	const stage = (id: string) => getWalk(db, id, null)!;
+
+	it('come in path order, with the stages before and after', () => {
+		const r = relatedWalks(db, stage('osm:pad:B-C'), null);
+		expect(r.path).toEqual({ id: 'osm:pad', name: 'Proefpad' });
+		expect(r.stages.map((w) => w.id)).toEqual(['osm:pad:A-B', 'osm:pad:C-D']);
+		expect(r.prev?.id).toBe('osm:pad:A-B');
+		expect(r.next?.id).toBe('osm:pad:C-D');
+		expect(relatedWalks(db, stage('osm:pad:A-B'), null)).toMatchObject({ prev: null });
 	});
 });

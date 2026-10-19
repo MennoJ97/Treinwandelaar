@@ -51,6 +51,25 @@ export interface WalkSummary {
 	geometry: [number, number][];
 }
 
+export type Cover = 'forest' | 'heath' | 'dunes' | 'builtUp';
+
+/**
+ * What a walk passes, from OpenStreetMap (scripts/lib/context.ts), for its own page. Null for the
+ * walks that don't come from OSM, and until the OSM ingest has run.
+ */
+export interface WalkAlong {
+	/** Towns, villages and hamlets it passes, in walking order. */
+	places: string[];
+	/** Named nature reserves, national parks and estates it runs through, in walking order. */
+	nature: string[];
+	/** Named sights within ~150 m: "molen De Hoop", "Kasteel Doorwerth"… */
+	sights: string[];
+	/** Percent of the route (rounded to 10) through forest, heath, dunes and built-up area. */
+	cover: Partial<Record<Cover, number>>;
+	/** Percent of the route (rounded to 10) on ways OSM knows as paved or unpaved. */
+	surface: { paved: number; unpaved: number };
+}
+
 /** A walk in the list, without its line: the page loads the lines on their own (/api/walk-lines). */
 export type WalkListItem = Omit<WalkSummary, 'geometry'>;
 
@@ -117,6 +136,7 @@ export interface WalkDetail extends WalkSummary {
 	gpxUrl: string | null;
 	photos: WalkPhoto[];
 	notes: string | null;
+	along: WalkAlong | null;
 }
 
 export interface TripLeg {

@@ -20,13 +20,13 @@ Without `NS_API_KEY`, stations come from OpenStreetMap and the app works without
 
 ## Data pipeline
 
-| Step               | Source                                                    | Gives                                                         |
-| ------------------ | --------------------------------------------------------- | ------------------------------------------------------------- |
-| `ingest:stations`  | NS Stations API, or OSM Overpass as fallback              | ~400 NL stations with NS codes                                |
-| `ingest:gtfs`      | OVapi GTFS (gtfs.ovapi.nl/nl, ~250 MB, daily)             | rail timetable two months ahead, plus buses to far route ends |
-| `ingest:wandelnet` | wandelnet.nl/ns-wandelingen, route pages, review tab, GPX | route line, distance, start/end, description, star ratings    |
-| `ingest:nsnl`      | ns.nl/dagje-uit/wandelen pages                            | photos, paved %, dogs policy                                  |
-| `ingest:osm`       | Geofabrik's OSM extract of NL (~1.4 GB, weekly), osmium   | LAW, streekpad and local walks from OpenStreetMap             |
+| Step               | Source                                                    | Gives                                                                   |
+| ------------------ | --------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `ingest:stations`  | NS Stations API, or OSM Overpass as fallback              | ~400 NL stations with NS codes                                          |
+| `ingest:gtfs`      | OVapi GTFS (gtfs.ovapi.nl/nl, ~250 MB, daily)             | rail timetable two months ahead, plus buses to far route ends           |
+| `ingest:wandelnet` | wandelnet.nl/ns-wandelingen, route pages, review tab, GPX | route line, distance, start/end, description, star ratings              |
+| `ingest:nsnl`      | ns.nl/dagje-uit/wandelen pages                            | photos, paved %, dogs policy                                            |
+| `ingest:osm`       | Geofabrik's OSM extract of NL (~1.4 GB, weekly), osmium   | LAW, streekpad and local walks from OpenStreetMap, and what each passes |
 
 Raw responses are cached in `data/raw` (re-download with `-- --refresh`), at most one request per second.
 `ingest:osm` needs [osmium](https://osmcode.org/osmium-tool/) (`brew install osmium-tool`, or
@@ -120,7 +120,9 @@ single-application forward-auth provider (paths are matched without the host), l
 
 Each walk a visitor may see also has a page of its own, `/route/<walk id>`, with its title, distance
 and stations as plain HTML for search engines, and `/route/` lists them all; `/sitemap.xml` names
-those pages, each with the day an ingest last changed the walk's data (`walks.changed_on`). They
+those pages, each with the day an ingest last changed the walk's data (`walks.changed_on`). What a
+walk passes (villages, nature areas, sights, forest/heath/dunes, paved or not) comes from the same
+OSM extract (`scripts/lib/context.ts`, stored in `walks.along`). They
 follow the same rule as the map: without a session, only the OpenStreetMap walks.
 
 Visitors then get the demo, and the "Inloggen" link (`/login`) sends them through Authentik and back.

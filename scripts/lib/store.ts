@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { transaction } from '../../src/lib/server/db';
 import { lineLengthKm, simplify, type LngLat } from '../../src/lib/geo';
-import type { Collection, PathStage, PathStop, WalkSource } from '../../src/lib/types';
+import type { Collection, PathStage, PathStop, WalkAlong, WalkSource } from '../../src/lib/types';
 
 export interface WalkRecord {
 	id: string;
@@ -30,6 +30,8 @@ export interface WalkRecord {
 	sourceUrl: string;
 	gpxUrl: string | null;
 	photos: { url: string; caption: string | null }[];
+	/** What it passes, from OSM (scripts/lib/context.ts); only the OSM ingest has it. */
+	along?: WalkAlong | null;
 }
 
 /**
@@ -56,7 +58,8 @@ const CONTENT_COLUMNS = [
 	'rating_avg',
 	'review_count',
 	'source_url',
-	'gpx_url'
+	'gpx_url',
+	'along'
 ];
 
 const UPSERT = `
@@ -103,6 +106,7 @@ export function saveWalk(db: DatabaseSync, w: WalkRecord) {
 			w.reviewCount,
 			w.sourceUrl,
 			w.gpxUrl,
+			w.along ? JSON.stringify(w.along) : null,
 			w.wandelnetDuplicate ? 1 : 0
 		);
 		const source = w.source ?? 'wandelnet';

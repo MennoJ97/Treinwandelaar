@@ -15,6 +15,8 @@ export interface OsmRelation {
 		ref: number;
 		role: string;
 		geometry?: { lat: number; lon: number }[];
+		/** The way's own tags (highway, surface…), when read from the extract. */
+		tags?: Record<string, string>;
 	}[];
 }
 

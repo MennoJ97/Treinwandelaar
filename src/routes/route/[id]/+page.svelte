@@ -8,9 +8,12 @@
 		type WalkListItem
 	} from '#lib/types.js';
 	import {
+		alongSentences,
 		formatKm,
 		osmCredit,
 		walkDescription,
+		walkHeading,
+		walkNetwork,
 		walkPath,
 		walkTitle,
 		wandelnetCredit,
@@ -21,20 +24,27 @@
 	let { data }: PageProps = $props();
 	const walk = $derived(data.walk);
 	const title = $derived(walkTitle(walk));
-	const description = $derived(walkDescription(walk));
+	const description = $derived(walkDescription(walk, walk.along));
+	const heading = $derived(walkHeading(walk));
+	const along = $derived(alongSentences(walk, walk.along));
 	const canonical = $derived(page.url.origin + walkPath(walk.id));
 	/** Search engines see what an anonymous visitor sees; a signed-in user's Wandelnet walk is not for them. */
 	const indexable = $derived(walk.source === 'osm');
 	const home = $derived(`/?walk=${encodeURIComponent(walk.id)}`);
 
 	/** "station Breda", and how far the route's own end is from it (straight line), or that it takes a bus. */
-	function access(station: string | null, place: string | null, metres: number | null) {
+	function access(
+		station: string | null,
+		place: string | null,
+		metres: number | null,
+		end: 'begin' | 'eind'
+	) {
 		if (!station) return place ?? '?';
 		if (metres == null || metres <= AT_STATION_M) return `station ${station}`;
 		const km = `${formatKm(Math.round(metres / 100) / 10)} km`;
 		return metres > WALKABLE_STATION_M
-			? `${place ?? 'het begin'}, ${km} van station ${station}: met de bus`
-			: `station ${station}, het begin van de route ligt ${km} verderop`;
+			? `${place ?? `het ${end}`}, ${km} van station ${station}: met de bus`
+			: `station ${station}, het ${end} van de route ligt ${km} verderop`;
 	}
 
 	const stationsLine = (w: WalkListItem) =>
@@ -57,8 +67,8 @@
 <div class="page">
 	<PageBar />
 	<main>
-		<p class="kicker">{COLLECTION_LABELS[walk.collection]}</p>
-		<h1>{walk.name}</h1>
+		<p class="kicker">{walkNetwork(walk) ?? COLLECTION_LABELS[walk.collection]}</p>
+		<h1>{heading}</h1>
 		<p class="lead">
 			{walk.isLoop ? 'Rondwandeling' : 'Wandeling'} van {formatKm(walk.distanceKm)} km
 			{#if walk.isLoop}vanaf station {walk.startStationName ?? walk.startPlace}{:else}van station
@@ -70,6 +80,17 @@
 			<a class="primary" href={home}>Op de kaart, met treinen vanaf jouw station</a>
 			<a href="/api/walks/{encodeURIComponent(walk.id)}/gpx">GPX downloaden</a>
 		</p>
+
+		{#if data.related.prev || data.related.next}
+			<nav class="stages" aria-label="Etappes">
+				{#if data.related.prev}<a rel="prev" href={walkPath(data.related.prev.id)}
+						>← Vorige etappe: {stationsLine(data.related.prev)}</a
+					>{/if}
+				{#if data.related.next}<a rel="next" href={walkPath(data.related.next.id)}
+						>Volgende etappe: {stationsLine(data.related.next)} →</a
+					>{/if}
+			</nav>
+		{/if}
 
 		{#if data.sketch}
 			{@const s = data.sketch}
@@ -89,10 +110,10 @@
 			<dt>Afstand</dt>
 			<dd>{formatKm(walk.distanceKm)} km</dd>
 			<dt>{walk.isLoop ? 'Start en eind' : 'Start'}</dt>
-			<dd>{access(walk.startStationName, walk.startPlace, walk.startStationM)}</dd>
+			<dd>{access(walk.startStationName, walk.startPlace, walk.startStationM, 'begin')}</dd>
 			{#if !walk.isLoop}
 				<dt>Eind</dt>
-				<dd>{access(walk.endStationName, walk.endPlace, walk.endStationM)}</dd>
+				<dd>{access(walk.endStationName, walk.endPlace, walk.endStationM, 'eind')}</dd>
 			{/if}
 			{#if walk.pavedPct != null}
 				<dt>Verhard</dt>
@@ -100,17 +121,28 @@
 			{/if}
 			<dt>Soort</dt>
 			<dd>{COLLECTION_LABELS[walk.collection]}</dd>
+			{#if heading !== walk.name}
+				<dt>In OpenStreetMap</dt>
+				<dd>{walk.name}</dd>
+			{/if}
 		</dl>
+
+		{#if along.length}
+			<section>
+				<h2>Onderweg</h2>
+				<p class="along">{along.join(' ')}</p>
+			</section>
+		{/if}
 
 		{#if walk.description}<p class="description">{walk.description}</p>{/if}
 
 		{#if data.related.stages.length && data.related.path}
 			<section>
-				<h2>Meer etappes van het {data.related.path.name}</h2>
+				<h2>Alle etappes van het {data.related.path.name}</h2>
 				<ul class="related">
 					{#each data.related.stages as w (w.id)}
 						<li>
-							<a href={walkPath(w.id)}>{w.name}</a>
+							<a href={walkPath(w.id)}>{walkHeading(w)}</a>
 							<span>{stationsLine(w)}, {formatKm(w.distanceKm)} km</span>
 						</li>
 					{/each}
@@ -124,7 +156,7 @@
 				<ul class="related">
 					{#each data.related.nearby as w (w.id)}
 						<li>
-							<a href={walkPath(w.id)}>{w.name}</a>
+							<a href={walkPath(w.id)}>{walkHeading(w)}</a>
 							<span>{stationsLine(w)}, {formatKm(w.distanceKm)} km</span>
 						</li>
 					{/each}
@@ -247,6 +279,19 @@
 
 	.description {
 		margin: 20px 0 0;
+	}
+
+	.along {
+		margin: 0;
+	}
+
+	.stages {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: 8px 20px;
+		margin: 0 0 20px;
+		font-size: var(--step--1);
 	}
 
 	.related {

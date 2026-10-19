@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import PageBar from '#lib/components/PageBar.svelte';
 	import { COLLECTION_LABELS, type Collection } from '#lib/types.js';
-	import { formatKm, walkPath } from '#lib/walk.js';
+	import { formatKm, walkHeading, walkPath } from '#lib/walk.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -52,7 +52,7 @@
 				<ul>
 					{#each g.walks as w (w.id)}
 						<li>
-							<a href={walkPath(w.id)}>{w.name}</a>
+							<a href={walkPath(w.id)}>{walkHeading(w)}</a>
 							<span
 								>{w.isLoop
 									? `rondje vanaf ${w.startStationName ?? w.startPlace}`

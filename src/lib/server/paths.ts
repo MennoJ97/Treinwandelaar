@@ -140,7 +140,8 @@ export function plannedWalk(db: DatabaseSync, id: string, user: string | null): 
 		nsUrl: null,
 		gpxUrl: null,
 		photos: [],
-		notes: null
+		notes: null,
+		along: null
 	};
 }
 

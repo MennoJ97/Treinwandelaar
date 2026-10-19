@@ -17,7 +17,8 @@ import { dirname, join } from 'node:path';
 import { openDb } from '../../src/lib/server/db';
 import { lineLengthKm, type LngLat } from '../../src/lib/geo';
 import type { Collection, Station } from '../../src/lib/types';
-import { hikingRoutes } from '../lib/extract';
+import { walkContext } from '../lib/context';
+import { contextFeatures, hikingRoutes } from '../lib/extract';
 import {
 	classify,
 	isClosed,
@@ -113,11 +114,13 @@ async function main() {
 		});
 		seenPaths.add(p.id);
 	};
+	// Saved at the end, once we know what each walk passes (walkContext).
+	const walks: WalkRecord[] = [];
 	const save = (w: Omit<WalkRecord, 'source' | 'sourceId' | 'startPlace' | 'endPlace'>) => {
 		if (seen.has(w.id)) return;
 		const wandelnetDuplicate = onWandelnetGround(w.track) >= DUPLICATE_SHARE;
 		if (wandelnetDuplicate) duplicates++;
-		saveWalk(db, {
+		walks.push({
 			...w,
 			wandelnetDuplicate,
 			source: 'osm',
@@ -289,6 +292,24 @@ async function main() {
 			}
 		});
 	}
+
+	// What each walk passes: the route ways it follows (surface), then the landscape around it.
+	const context = walkContext(walks.map((w) => w.track));
+	for (const rel of relations)
+		for (const m of rel.members)
+			if (m.type === 'way' && m.geometry && m.tags)
+				context.addWay(
+					m.geometry.map((p): LngLat => [p.lon, p.lat]),
+					m.tags
+				);
+	let features = 0;
+	for await (const f of contextFeatures(EXTRACT_DIR)) {
+		context.addFeature(f);
+		features++;
+	}
+	const along = context.done();
+	walks.forEach((w, i) => saveWalk(db, { ...w, along: along[i] }));
+	console.log(`Matched ${features} OSM features against the walks for what they pass.`);
 
 	recordFetched(db, 'osm', dataFrom);
 	const pruned = pruneStale(db, ['law', 'streekpad', 'lokaal'], seen, 'osm');

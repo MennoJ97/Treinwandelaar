@@ -15,8 +15,11 @@ import {
 	statSync
 } from 'node:fs';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
+import { createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import type { GeoFeature } from './context';
 import type { OsmRelation } from './osm';
 
 const EXTRACT_URL = 'https://download.geofabrik.de/europe/netherlands-latest.osm.pbf';
@@ -42,7 +45,10 @@ function tagsOf(field: string | undefined): Record<string, string> {
  * the shape of Overpass `out geom`, so the same code turns them into walks.
  */
 export function parseRoutesOpl(opl: string): OsmRelation[] {
-	const ways = new Map<number, { lat: number; lon: number }[]>();
+	const ways = new Map<
+		number,
+		{ geometry: { lat: number; lon: number }[]; tags: Record<string, string> }
+	>();
 	const relations: OsmRelation[] = [];
 	for (const line of opl.split('\n')) {
 		const kind = line[0];
@@ -57,7 +63,7 @@ export function parseRoutesOpl(opl: string): OsmRelation[] {
 				const m = /x(-?[\d.]+)y(-?[\d.]+)$/.exec(node);
 				if (m) geometry.push({ lon: Number(m[1]), lat: Number(m[2]) });
 			}
-			ways.set(id, geometry);
+			ways.set(id, { geometry, tags: tagsOf(fields.get('T')) });
 		} else {
 			// M: w12@,w13@forward,n5@guidepost,r6@
 			const members = (fields.get('M') ?? '')
@@ -74,7 +80,8 @@ export function parseRoutesOpl(opl: string): OsmRelation[] {
 	// Ways come before relations in OPL, but attach geometry afterwards to be safe.
 	for (const rel of relations)
 		for (const m of rel.members)
-			if (m.type === 'way') Object.assign(m, { geometry: ways.get(m.ref) });
+			if (m.type === 'way')
+				Object.assign(m, { geometry: ways.get(m.ref)?.geometry, tags: ways.get(m.ref)?.tags });
 	return relations;
 }
 
@@ -86,6 +93,48 @@ async function download(url: string, file: string) {
 	const partial = `${file}.part`;
 	await pipeline(Readable.fromWeb(res.body as never), createWriteStream(partial));
 	renameSync(partial, file);
+}
+
+/**
+ * What a walk can pass (scripts/lib/context.ts): forest, heath, dunes and built-up areas, named nature
+ * reserves and estates, towns and villages, and named mills, castles, viewpoints and the like.
+ */
+const CONTEXT_FILTERS = [
+	'a/landuse=forest,residential',
+	'a/natural=wood,heath,sand,dune,beach',
+	'a/leisure=nature_reserve',
+	'a/boundary=national_park,protected_area',
+	'n/place=city,town,village,hamlet',
+	'nwr/historic=castle,manor,windmill,fort,ruins,monastery',
+	'nwr/man_made=windmill,watermill,lighthouse',
+	'nwr/tourism=viewpoint,attraction'
+];
+
+/**
+ * The CONTEXT_FILTERS features of the extract that hikingRoutes downloaded, as points and polygons
+ * (osmium assembles the multipolygons). ~650k features, ~25 s; streamed, not read whole (~430 MB).
+ */
+export async function* contextFeatures(dir: string): AsyncGenerator<GeoFeature> {
+	const pbf = join(dir, 'netherlands-latest.osm.pbf');
+	const filtered = join(dir, 'context.osm.pbf');
+	const features = join(dir, 'context.geojsonseq');
+	const osmium = (...args: string[]) => execFileSync('osmium', args, { stdio: 'inherit' });
+	osmium('tags-filter', pbf, ...CONTEXT_FILTERS, '-o', filtered, '--overwrite');
+	osmium(
+		'export',
+		filtered,
+		'-f',
+		'geojsonseq',
+		'--geometry-types=point,polygon',
+		'-o',
+		features,
+		'--overwrite'
+	);
+	for await (const line of createInterface({ input: createReadStream(features) })) {
+		// geojsonseq starts each record with an RS character.
+		const json = line.replace(/^\x1e/, '').trim();
+		if (json) yield JSON.parse(json) as GeoFeature;
+	}
 }
 
 /**
