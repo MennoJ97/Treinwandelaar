@@ -2,22 +2,12 @@ import type { Handle } from '@sveltejs/kit/hooks';
 import { FAMILY_SITE } from '$app/env/public';
 import { fillTemplate } from '#lib/template.js';
 import { compress } from '#lib/server/compress.js';
-import { anonymousAccess } from '#lib/server/context.js';
-import { LOCAL_USER } from '#lib/server/db.js';
+import { anonymousAccess, proxySecret } from '#lib/server/context.js';
+import { requestUser } from '#lib/server/user.js';
 
-/**
- * Who is asking. Authentik's forward-auth adds X-authentik-username to every request from a signed-in
- * user, also on the paths it lets through without login, and Traefik replaces any copy the client
- * sent; so the header can be trusted as long as the app is only reachable through Traefik.
- *
- * Without it, ANONYMOUS_ACCESS decides: 'demo' (the default) for the public demo, where Authentik lets
- * anonymous visitors through to everything but /login, or 'full' as the shared LOCAL_USER (local dev,
- * a LAN-only setup without Authentik).
- */
 export const handle: Handle = async ({ event, resolve }) => {
-	event.locals.user =
-		event.request.headers.get('x-authentik-username') ||
-		(anonymousAccess() === 'demo' ? null : LOCAL_USER);
+	// Who is asking: see requestUser for when X-authentik-username is believed.
+	event.locals.user = requestUser(event.request.headers, proxySecret(), anonymousAccess());
 	const response = await resolve(event, {
 		transformPageChunk: ({ html }) => fillTemplate(html, event.url.origin, FAMILY_SITE)
 	});

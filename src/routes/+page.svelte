@@ -104,7 +104,9 @@
 	let disruptions = $state<Record<string, Disruption>>({});
 	let closed = $state<Record<string, string[]>>({});
 	let reachSource = $state<'timetable' | 'ns'>('timetable');
-	let reachStatus = $state<'idle' | 'loading' | 'error' | 'incomplete'>('idle');
+	let reachStatus = $state<'idle' | 'loading' | 'error' | 'incomplete' | 'refused'>('idle');
+	/** Why the server won't ask NS for this day (a 4xx for a day outside the timetable). */
+	let reachRefusal = $state<{ status: number; message: string } | null>(null);
 
 	$effect(() => {
 		const controller = new AbortController();
@@ -114,9 +116,17 @@
 		disruptions = {};
 		closed = {};
 		reachStatus = 'loading';
+		reachRefusal = null;
 		const params = new URLSearchParams({ from: home, date: day });
 		fetch(`/api/reachability?${params}`, { signal: controller.signal })
-			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+			.then(async (r) => {
+				if (r.ok) return r.json();
+				if (r.status === 400 || r.status === 403) {
+					const body = await r.json().catch(() => ({}));
+					reachRefusal = { status: r.status, message: body.message ?? `HTTP ${r.status}` };
+				}
+				throw new Error(`HTTP ${r.status}`);
+			})
 			.then((r: ReachabilityResponse) => {
 				reachability = r.times;
 				reachBack = r.back;
@@ -126,7 +136,7 @@
 				reachStatus = r.incomplete ? 'incomplete' : 'idle';
 			})
 			.catch(() => {
-				if (!controller.signal.aborted) reachStatus = 'error';
+				if (!controller.signal.aborted) reachStatus = reachRefusal ? 'refused' : 'error';
 			});
 		return () => controller.abort();
 	});
@@ -172,11 +182,13 @@
 		return () => controller.abort();
 	});
 
+	/** Plan on another route, or none (''): from the filter, the planner, or a route on the map. */
 	function pickRoute(id: string) {
 		stretch = { from: null, to: null };
 		const url = new URL(page.url.href);
 		if (id) url.searchParams.set('route', id);
 		else url.searchParams.delete('route');
+		url.searchParams.delete('walk');
 		goto(url, { reset: false, replace: true });
 	}
 
@@ -204,13 +216,35 @@
 	}
 	let noBus = $state(false);
 	let hideDisrupted = $state(false);
+
+	/**
+	 * The whole LAW routes and streekpaden, faint under the walks: off by default, so the map stays
+	 * about walks you can reach by train. Remembered per browser, like the home station.
+	 */
+	const ROUTES_KEY = 'treinwandelaar.routes';
+	let showRoutes = $state(readShowRoutes());
+
+	function readShowRoutes(): boolean {
+		try {
+			return typeof localStorage !== 'undefined' && localStorage.getItem(ROUTES_KEY) === '1';
+		} catch {
+			return false;
+		}
+	}
+
+	$effect(() => {
+		try {
+			localStorage.setItem(ROUTES_KEY, showRoutes ? '1' : '0');
+		} catch {
+			/* private mode: fine, just not remembered */
+		}
+	});
 	let sort = $state<'travel' | 'rating' | 'distance' | 'name'>('travel');
 
 	/** Small screens fold the filters away so the list starts under the map; this says how many bite. */
 	let filtersOpen = $state(false);
 	const activeFilters = $derived(
 		[
-			!!routeId,
 			maxTravel < 180,
 			maxKm < 25,
 			shown.length < collections.filter((c) => countBy[c]).length,
@@ -438,6 +472,8 @@
 				rides={selected ? feederLines : undefined}
 				credit={mapCredit}
 				onselect={select}
+				routeKinds={showRoutes && !routeId ? shown : []}
+				onroute={pickRoute}
 				onlocate={(code) => (home = code)}
 				obscured={mapCovered}
 			/>
@@ -480,6 +516,25 @@
 				</p>
 			{/if}
 
+			<!-- Outside the filters, which fold away on a phone: planning on a route is a way in, not a filter. -->
+			{#if data.paths.length}
+				<label class="route-pick">
+					<span>Etappes plannen</span>
+					<select value={routeId ?? ''} onchange={(e) => pickRoute(e.currentTarget.value)}>
+						<option value="">kies een LAW-route of streekpad</option>
+						{#each routeGroups as group (group.label)}
+							{#if group.paths.length}
+								<optgroup label={group.label}>
+									{#each group.paths as p (p.id)}
+										<option value={p.id}>{p.name}</option>
+									{/each}
+								</optgroup>
+							{/if}
+						{/each}
+					</select>
+				</label>
+			{/if}
+
 			<button
 				type="button"
 				class="filters-toggle"
@@ -517,23 +572,6 @@
 					<input type="range" min="8" max="25" step="1" bind:value={maxKm} />
 					<output class="tabular">{maxKm >= 25 ? 'alles' : `${maxKm} km`}</output>
 				</label>
-				{#if data.paths.length}
-					<label class="route">
-						<span>Route</span>
-						<select value={routeId ?? ''} onchange={(e) => pickRoute(e.currentTarget.value)}>
-							<option value="">alle wandelingen</option>
-							{#each routeGroups as group (group.label)}
-								{#if group.paths.length}
-									<optgroup label={group.label}>
-										{#each group.paths as p (p.id)}
-											<option value={p.id}>{p.name}</option>
-										{/each}
-									</optgroup>
-								{/if}
-							{/each}
-						</select>
-					</label>
-				{/if}
 				{#if !routeId}
 					<div class="kinds" role="group" aria-label="Soort wandeling">
 						{#each collections as c (c)}
@@ -557,6 +595,12 @@
 					<label
 						><input type="checkbox" bind:checked={hideDisrupted} /> Zonder werkzaamheden of storingen</label
 					>
+					{#if data.paths.length}
+						<label
+							><input type="checkbox" bind:checked={showRoutes} /> Hele LAW-routes en streekpaden op de
+							kaart</label
+						>
+					{/if}
 				</div>
 				<label class="sort">
 					<span>Sorteer op</span>
@@ -585,6 +629,11 @@
 				<p class="notice">
 					Nog niet alle reistijden: de NS-limiet (300 verzoeken per 5 minuten) is bereikt. Herlaad
 					over een paar minuten; wat al binnen is, blijft bewaard.
+				</p>
+			{:else if reachStatus === 'refused' && reachRefusal}
+				<p class="notice">
+					{reachRefusal.message}
+					{#if reachRefusal.status === 403}<a href="/login" data-sveltekit-reload>Inloggen</a>{/if}
 				</p>
 			{:else if reachStatus === 'error'}
 				<p class="notice">
@@ -814,6 +863,27 @@
 		padding: 18px 20px 6px;
 	}
 
+	.route-pick {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		align-items: center;
+		gap: 10px;
+		margin: 8px 20px 4px;
+		color: var(--muted);
+		font-size: var(--step--1);
+	}
+
+	/* As big as the filters bar under it: on a phone it's tapped. */
+	.route-pick select {
+		min-width: 0;
+		padding: 7px 8px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+		background: var(--surface);
+		color: var(--ink);
+		font: inherit;
+	}
+
 	.filters {
 		display: grid;
 		gap: 8px;
@@ -951,8 +1021,7 @@
 	}
 
 	.filters input.day,
-	.sort select,
-	.route select {
+	.sort select {
 		grid-column: 2 / 4;
 		min-width: 0;
 		padding: 2px 4px;

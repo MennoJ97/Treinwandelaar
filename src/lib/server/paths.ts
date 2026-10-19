@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { simplify, type LngLat } from '../geo';
 import { parseStretchId, planStretch, stageList } from '../path';
 import type {
 	Collection,
@@ -35,6 +36,33 @@ export function listPaths(db: DatabaseSync, user: string | null): PathSummary[] 
 			 order by name`
 		)
 		.all() as unknown as PathSummary[];
+}
+
+/** Coarser than a walk's line (8 m): enough for a faint line under the walks, a fraction of the bytes. */
+const OVERVIEW_M = 30;
+const round4 = (n: number) => Math.round(n * 1e4) / 1e4;
+
+/**
+ * Every path you can plan on, as GeoJSON for the map's overview: the whole route, including the
+ * stretches no day walk covers. Simplified to ~30 m and rounded to ~10 m.
+ */
+export function pathOverview(db: DatabaseSync, user: string | null) {
+	const rows = db
+		.prepare(`select id, name, collection, lines from paths where ${visibleTo(user)} order by name`)
+		.all() as { id: string; name: string; collection: Collection; lines: string }[];
+	return {
+		type: 'FeatureCollection' as const,
+		features: rows.map((r) => ({
+			type: 'Feature' as const,
+			properties: { id: r.id, name: r.name, collection: r.collection },
+			geometry: {
+				type: 'MultiLineString' as const,
+				coordinates: (JSON.parse(r.lines) as LngLat[][]).map((line) =>
+					simplify(line, OVERVIEW_M).map(([lng, lat]) => [round4(lng), round4(lat)])
+				)
+			}
+		}))
+	};
 }
 
 /** The stage ends of a path that a bus runs to, as stops (see path_bus_stop). */

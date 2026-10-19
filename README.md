@@ -80,6 +80,18 @@ domains and keys belong in `.env`, never in the repository.
 header that Authentik's forward-auth sets (list it in the middleware's `authResponseHeaders`). Traefik
 replaces any copy of that header a client sends, so don't publish the app's port past Traefik.
 
+Anything else that can reach the port, such as another container on the same Docker network, could still
+send the header itself. Set `PROXY_SECRET` in `.env` and have Traefik add it to every request, and the
+header only counts on requests that carry it:
+
+```yaml
+- traefik.http.middlewares.treinwandelaar-proxy-secret.headers.customrequestheaders.X-Proxy-Secret=${PROXY_SECRET}
+- traefik.http.routers.treinwandelaar.middlewares=<your-auth-middleware>,treinwandelaar-proxy-secret
+```
+
+A headers middleware sets the value, so a copy sent by the client is overwritten. Add it to every router
+that points at the app.
+
 Without the header, `ANONYMOUS_ACCESS` decides. `demo`, the default, shows only the OpenStreetMap walks and
 saves nothing; `full` shows everything to everyone as the shared user `local`, for local or LAN-only use
 (`.env.example` sets it). Ratings from before per-user storage belong to `local`; to claim them, run

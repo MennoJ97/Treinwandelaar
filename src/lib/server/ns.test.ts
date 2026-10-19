@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { mapStation, mapTrip, normalizeTime } from './ns';
+import { DatabaseSync } from 'node:sqlite';
+import { initSchema } from './db';
+import { mapStation, mapTrip, normalizeTime, pruneTripCache } from './ns';
 import { buildRailNetwork } from './railMap';
 
 const track = (from: string, to: string, coordinates: number[][]) => ({
@@ -142,5 +144,32 @@ describe('NS mapping', () => {
 			})?.name
 		).toBe('Culemborg');
 		expect(mapStation({ names: { long: 'No location' } })).toBeNull();
+	});
+});
+
+describe('trip_cache', () => {
+	it('prunes only the rows past their TTL', () => {
+		const db = new DatabaseSync(':memory:');
+		initSchema(db);
+		const add = db.prepare(
+			'insert into trip_cache (key, json, fetched_at, expires_at) values (?, ?, ?, ?)'
+		);
+		add.run('trip', '{}', 1000, 1300); // a planner trip, 5 minutes
+		add.run('reach', '{}', 1000, 1000 + 7 * 24 * 3600); // a reachability trip, a week
+		expect(pruneTripCache(db, 1200)).toBe(0);
+		expect(pruneTripCache(db, 1400)).toBe(1);
+		const keys = db.prepare('select key from trip_cache').all() as { key: string }[];
+		expect(keys.map((k) => k.key)).toEqual(['reach']);
+	});
+
+	it('gives rows from before expires_at a week', () => {
+		const db = new DatabaseSync(':memory:');
+		db.exec(
+			'create table trip_cache (key text primary key, json text not null, fetched_at integer not null)'
+		);
+		db.prepare('insert into trip_cache values (?, ?, ?)').run('old', '{}', 1000);
+		initSchema(db);
+		const row = db.prepare('select expires_at from trip_cache').get() as { expires_at: number };
+		expect(row.expires_at).toBe(1000 + 7 * 24 * 3600);
 	});
 });

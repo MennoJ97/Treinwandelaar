@@ -158,7 +158,8 @@ create table if not exists meta (
 create table if not exists trip_cache (
 	key text primary key,
 	json text not null,
-	fetched_at integer not null
+	fetched_at integer not null,
+	expires_at integer not null default 0 -- unix seconds; expired rows are pruned (ns.ts)
 );
 `;
 
@@ -196,6 +197,17 @@ function migrate(db: DatabaseSync) {
 	).map((c) => c.name);
 	if (!feederColumns.includes('geometry_id'))
 		db.exec('alter table feeder_trip add column geometry_id integer');
+
+	// The NS cache used to keep every response forever. Rows from before expires_at get the longest
+	// TTL in use (a week, reachability) and are pruned from then on.
+	const cacheColumns = (
+		db.prepare('pragma table_info(trip_cache)').all() as { name: string }[]
+	).map((c) => c.name);
+	if (!cacheColumns.includes('expires_at')) {
+		db.exec(`alter table trip_cache add column expires_at integer not null default 0`);
+		db.exec(`update trip_cache set expires_at = fetched_at + ${7 * 24 * 3600}`);
+	}
+	db.exec('create index if not exists trip_cache_expires on trip_cache (expires_at)');
 
 	// The personal layer used to be single-user (keyed by walk_id alone); its rows go to LOCAL_USER.
 	const userColumns = (db.prepare('pragma table_info(user_walk)').all() as { name: string }[]).map(

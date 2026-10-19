@@ -8,6 +8,7 @@
 	} from 'maplibre-gl';
 	import {
 		WALKABLE_STATION_M,
+		type Collection,
 		type PathDetail,
 		type Reachability,
 		type Station,
@@ -38,6 +39,10 @@
 		/** Source line for the routes, next to the map data's own attribution. */
 		credit: string;
 		onselect: (id: string | null) => void;
+		/** Which kinds of whole routes to draw faintly under the walks (LAW routes, streekpaden). */
+		routeKinds?: Collection[];
+		/** You clicked a whole route where no walk lies on it: plan on it. */
+		onroute?: (id: string) => void;
 		/** You asked the map where you are: here's the station closest to you. */
 		onlocate: (code: string) => void;
 		/** How many pixels at the map's bottom are behind something, like the list on small screens. */
@@ -56,6 +61,8 @@
 		rides = { start: [], end: [] },
 		credit,
 		onselect,
+		routeKinds = [],
+		onroute = () => {},
 		onlocate,
 		obscured = () => 0
 	}: Props = $props();
@@ -198,6 +205,15 @@
 	});
 
 	const selectedFilter = (): FilterSpecification => ['==', ['get', 'id'], selectedId ?? ''];
+	const EMPTY = { type: 'FeatureCollection' as const, features: [] };
+	/** Whether the whole routes were ever switched on: from then on the source keeps them. */
+	let routesWanted = false;
+
+	const routeFilter = (): FilterSpecification => [
+		'in',
+		['get', 'collection'],
+		['literal', routeKinds]
+	];
 	const hoveredFilter = (): FilterSpecification => ['==', ['get', 'id'], hoveredId ?? ''];
 
 	/** The selected walk's stations are labelled by its own end markers; don't name them twice. */
@@ -236,6 +252,8 @@
 		m.addSource('walk-ends', { type: 'geojson', data: endFeatures });
 		m.addSource('path', { type: 'geojson', data: pathFeatures });
 		m.addSource('transit', { type: 'geojson', data: transitFeatures });
+		// Every whole route: a few hundred KB, fetched only once you ask to see them.
+		m.addSource('routes', { type: 'geojson', data: routesWanted ? '/api/paths' : EMPTY });
 
 		const bandColor = [
 			'match',
@@ -347,6 +365,28 @@
 				'text-halo-color': cssVar('--surface'),
 				'text-halo-width': 1.5
 			}
+		});
+		// Every LAW route and streekpad, faint, so the stretches without a day walk show too: you can
+		// still plan on them. Under every walk (only the open walk's trains and buses lie lower), and
+		// thinner than any walk.
+		m.addLayer({
+			id: 'routes-line',
+			type: 'line',
+			source: 'routes',
+			filter: routeFilter(),
+			layout: { 'line-cap': 'round', 'line-join': 'round' },
+			paint: {
+				'line-color': cssVar('--path'),
+				'line-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.6, 12, 0.7],
+				'line-width': ['interpolate', ['linear'], ['zoom'], 7, 1.5, 12, 3]
+			}
+		});
+		m.addLayer({
+			id: 'routes-hit',
+			type: 'line',
+			source: 'routes',
+			filter: routeFilter(),
+			paint: { 'line-color': '#000', 'line-opacity': 0, 'line-width': 12 }
 		});
 		// The whole route you're planning on, dotted like a path on a topographic map.
 		m.addLayer({
@@ -612,8 +652,16 @@
 					const id = e.features?.[0]?.properties?.id;
 					if (id) onselect(id);
 				});
-				m.on('mouseenter', 'walks-hit', () => (m.getCanvas().style.cursor = 'pointer'));
-				m.on('mouseleave', 'walks-hit', () => (m.getCanvas().style.cursor = ''));
+				// A whole route under a walk: the walk wins, it's what you see on top.
+				m.on('click', 'routes-hit', (e) => {
+					if (m.queryRenderedFeatures(e.point, { layers: ['walks-hit'] }).length) return;
+					const id = e.features?.[0]?.properties?.id;
+					if (id) onroute(id);
+				});
+				for (const layer of ['walks-hit', 'routes-hit']) {
+					m.on('mouseenter', layer, () => (m.getCanvas().style.cursor = 'pointer'));
+					m.on('mouseleave', layer, () => (m.getCanvas().style.cursor = ''));
+				}
 				ready = true;
 			});
 			// family.js fires this whenever the theme on screen changes: the switch, the system,
@@ -667,6 +715,18 @@
 			{ padding: panelPadding(56, true), maxZoom: 14, duration: 800 }
 		);
 	}
+
+	$effect(() => {
+		if (!ready || !map) return;
+		const filter = routeFilter();
+		// Mid style swap the layers are briefly gone; addOverlay applies the filter then.
+		if (!map.getLayer('routes-line')) return;
+		if (routeKinds.length && !routesWanted) {
+			routesWanted = true;
+			(map.getSource('routes') as GeoJSONSource).setData('/api/paths');
+		}
+		for (const id of ['routes-line', 'routes-hit']) map.setFilter(id, filter);
+	});
 
 	// Only the filter: running a finger down the list shouldn't send the map flying around.
 	$effect(() => {
