@@ -28,4 +28,8 @@ Disallow: /
 User-agent: *
 # /login only redirects to Authentik's sign-in page.
 Disallow: /login
+# Live NS train times for the planner: each call spends the same NS API key the
+# owner plans with, and nothing in it is worth indexing. The rest of /api/ stays
+# open: Google needs /api/osm-walks.geojson and friends to render the map.
+Disallow: /api/trips
 Allow: /
