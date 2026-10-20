@@ -224,6 +224,18 @@
 	// --- Filters & sorting --------------------------------------------------------------------------
 	let maxTravel = $state(180);
 	let maxKm = $state(25);
+	/** The shortest walks the ingest makes are 5 km (scripts/ingest/osm.ts), so 5 is "no minimum". */
+	let minKm = $state(5);
+
+	/** The two distance sliders push each other along rather than cross into an empty list. */
+	function setMinKm(km: number) {
+		minKm = km;
+		if (maxKm < 25 && maxKm < km) maxKm = Math.min(25, km);
+	}
+	function setMaxKm(km: number) {
+		maxKm = km;
+		if (minKm > km) minKm = Math.max(5, km);
+	}
 	let hideDone = $state(false);
 	const collections = Object.keys(COLLECTION_LABELS) as Collection[];
 	let shown = $state<Collection[]>([...collections]);
@@ -268,6 +280,7 @@
 	const activeFilters = $derived(
 		[
 			maxTravel < 180,
+			minKm > 5,
 			maxKm < 25,
 			shown.length < collections.filter((c) => countBy[c]).length,
 			hideDone,
@@ -280,6 +293,7 @@
 		const list = walks.filter((w) => {
 			const t = minutesTo(w);
 			if (maxTravel < 180 && t != null && t > maxTravel) return false;
+			if (minKm > 5 && w.distanceKm < minKm) return false;
 			if (maxKm < 25 && w.distanceKm > maxKm) return false;
 			// On one route, its own day walks; the route says what kind they are.
 			if (routeId ? !w.id.startsWith(`${routeId}:`) : !shown.includes(w.collection)) return false;
@@ -649,8 +663,27 @@
 					<output class="tabular">{maxTravel >= 180 ? 'alles' : formatDuration(maxTravel)}</output>
 				</label>
 				<label>
+					<span>Min. afstand</span>
+					<input
+						type="range"
+						min="5"
+						max="20"
+						step="1"
+						value={minKm}
+						oninput={(e) => setMinKm(e.currentTarget.valueAsNumber)}
+					/>
+					<output class="tabular">{minKm <= 5 ? 'alles' : `${minKm} km`}</output>
+				</label>
+				<label>
 					<span>Max. afstand</span>
-					<input type="range" min="8" max="25" step="1" bind:value={maxKm} />
+					<input
+						type="range"
+						min="8"
+						max="25"
+						step="1"
+						value={maxKm}
+						oninput={(e) => setMaxKm(e.currentTarget.valueAsNumber)}
+					/>
 					<output class="tabular">{maxKm >= 25 ? 'alles' : `${maxKm} km`}</output>
 				</label>
 				{#if !routeId}
