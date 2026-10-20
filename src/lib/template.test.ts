@@ -3,7 +3,8 @@ import { fillTemplate } from './template';
 
 const html = `<meta property="og:url" content="%treinwandelaar.origin%/" />
 <meta property="og:site_name" content="%treinwandelaar.host%" />
-%treinwandelaar.family%`;
+%treinwandelaar.family%
+%treinwandelaar.analytics%`;
 
 describe('fillTemplate', () => {
 	it('fills in the origin and the family site', () => {
@@ -28,5 +29,15 @@ describe('fillTemplate', () => {
 		expect(out).not.toContain('%');
 		expect(out).not.toContain('family');
 		expect(out).toContain('content="localhost:5173"');
+		expect(out).not.toContain('_u/script.js');
+	});
+
+	it("loads Umami's tracker from its own host when there is a website id", () => {
+		const id = 'c14f62d1-11d6-4d00-a637-b5e98067bf64';
+		const out = fillTemplate(html, 'https://walks.example.org', undefined, id);
+		expect(out).toContain(
+			`<script defer src="/_u/script.js" data-website-id="${id}" data-domains="walks.example.org" data-do-not-track="true"></script>`
+		);
+		expect(out).not.toContain('%');
 	});
 });

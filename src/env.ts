@@ -33,6 +33,19 @@ export const variables = defineEnvVars({
 		public: true,
 		schema: (value) => (value ? new URL(value).origin : undefined)
 	},
+	UMAMI_WEBSITE_ID: {
+		description:
+			"Umami website id: pages then load Umami's tracker from /_u/script.js on their own host, so " +
+			'the reverse proxy must send /_u/ to Umami with the prefix stripped. Optional: without it, ' +
+			'no analytics.',
+		// It goes into an attribute of every page: a UUID or nothing.
+		schema: (value) => {
+			if (!value) return undefined;
+			if (!/^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value))
+				throw new Error('UMAMI_WEBSITE_ID must be an Umami website id (a UUID)');
+			return value;
+		}
+	},
 	HOME_STATION: {
 		description: 'Default home station (NS code), e.g. UT for Utrecht Centraal.',
 		schema: (value) => value || 'UT'

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { FAMILY_SITE } from '$app/env/public';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import WalkMap from '#lib/components/WalkMap.svelte';
@@ -11,6 +11,7 @@
 	import RoutePlanner from '#lib/components/RoutePlanner.svelte';
 	import RangeSlider from '#lib/components/RangeSlider.svelte';
 	import { stretchId } from '#lib/path.js';
+	import { track } from '#lib/track.js';
 	import { amsterdamYmd, formatDuration, nextSaturdayMorning, travelBand } from '#lib/itinerary.js';
 	import {
 		COLLECTION_LABELS,
@@ -79,6 +80,14 @@
 		} catch {
 			/* private mode: fine, just not remembered */
 		}
+	});
+
+	// Another home station, from the picker or the map's "near me" (the one you start with isn't news).
+	let trackedHome = untrack(() => home);
+	$effect(() => {
+		if (home === trackedHome) return;
+		trackedHome = home;
+		track('home-station', { station: home });
 	});
 
 	const homeStation = $derived(data.stations.find((s) => s.code === home) ?? data.stations[0]);
@@ -206,6 +215,7 @@
 
 	/** Plan on another route, or none (''): from the filter, the planner, or a route on the map. */
 	function pickRoute(id: string) {
+		if (id) track('path-open', { id });
 		stretch = { from: null, to: null };
 		const url = new URL(page.url.href);
 		if (id) url.searchParams.set('route', id);
@@ -295,6 +305,31 @@
 			hideDisrupted
 		].filter(Boolean).length
 	);
+
+	/** What people filter on: the whole set, once it has been still for 1.5 s (sliders move in steps). */
+	const filterSet = () =>
+		JSON.stringify({
+			daysAhead: Math.round((Date.parse(day) - Date.parse(today)) / (24 * 3600_000)),
+			maxTravel,
+			km: distanceLabel,
+			kinds: shown.join(','),
+			wishlist: onlyWishlist,
+			hideDone,
+			noBus,
+			hideDisrupted,
+			routes: showRoutes,
+			sort
+		});
+	let trackedFilters = filterSet();
+	$effect(() => {
+		const now = filterSet();
+		if (now === trackedFilters) return;
+		const timer = setTimeout(() => {
+			trackedFilters = now;
+			track('filter', JSON.parse(now));
+		}, 1500);
+		return () => clearTimeout(timer);
+	});
 
 	const visible = $derived.by(() => {
 		const list = walks.filter((w) => {
@@ -391,6 +426,7 @@
 	);
 
 	function reverse() {
+		if (!reversed && selectedId) track('route-reverse', { id: selectedId });
 		const url = new URL(page.url.href);
 		if (reversed) url.searchParams.delete('reverse');
 		else url.searchParams.set('reverse', '1');
@@ -469,6 +505,7 @@
 			}
 		}
 		hoveredId = null;
+		if (id) track('route-open', { id });
 		const url = new URL(page.url.href);
 		if (id) url.searchParams.set('walk', id);
 		else url.searchParams.delete('walk');
@@ -547,7 +584,11 @@
 				{#if data.demo}
 					{osmCredit(data.osmUpdated)}: routes van Wandelnet en andere beheerders, ingetekend door
 					vrijwilligers.
-					<a href="/api/osm-walks.geojson" data-sveltekit-reload>Download (ODbL)</a>.
+					<a
+						href="/api/osm-walks.geojson"
+						data-sveltekit-reload
+						onclick={() => track('geojson-download')}>Download (ODbL)</a
+					>.
 				{:else}
 					{wandelnetCredit(data.wandelnetUpdated)}; foto's en praktische info van NS. Iets mis op
 					een route?
@@ -761,7 +802,10 @@
 					{reachBack}
 					bind:from={stretch.from}
 					bind:to={stretch.to}
-					onplan={(from, to) => select(stretchId(path!.id, from, to))}
+					onplan={(from, to) => {
+						track('route-search', { path: path!.id, from, to });
+						select(stretchId(path!.id, from, to));
+					}}
 					onclose={() => pickRoute('')}
 				/>
 			{/if}

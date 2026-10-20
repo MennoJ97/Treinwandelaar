@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import PageBar from '#lib/components/PageBar.svelte';
+	import { track } from '#lib/track.js';
 	import {
 		AT_STATION_M,
 		COLLECTION_LABELS,
@@ -97,8 +98,14 @@
 
 		<p class="actions">
 			<a class="primary" href={home}>Op de kaart, met treinen vanaf jouw station</a>
-			<a href="/api/walks/{encodeURIComponent(walk.id)}/gpx">GPX downloaden</a>
-			<a href="/api/walks/{encodeURIComponent(walk.id)}/gpx?reverse=1">GPX andersom</a>
+			<a
+				href="/api/walks/{encodeURIComponent(walk.id)}/gpx"
+				onclick={() => track('gpx-download', { id: walk.id, reverse: false })}>GPX downloaden</a
+			>
+			<a
+				href="/api/walks/{encodeURIComponent(walk.id)}/gpx?reverse=1"
+				onclick={() => track('gpx-download', { id: walk.id, reverse: true })}>GPX andersom</a
+			>
 		</p>
 
 		{#if data.related.prev || data.related.next}
