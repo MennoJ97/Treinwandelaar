@@ -9,6 +9,7 @@
 	import StationPicker from '#lib/components/StationPicker.svelte';
 	import MapLegend from '#lib/components/MapLegend.svelte';
 	import RoutePlanner from '#lib/components/RoutePlanner.svelte';
+	import RangeSlider from '#lib/components/RangeSlider.svelte';
 	import { stretchId } from '#lib/path.js';
 	import { amsterdamYmd, formatDuration, nextSaturdayMorning, travelBand } from '#lib/itinerary.js';
 	import {
@@ -223,19 +224,23 @@
 
 	// --- Filters & sorting --------------------------------------------------------------------------
 	let maxTravel = $state(180);
-	let maxKm = $state(25);
-	/** The shortest walks the ingest makes are 5 km (scripts/ingest/osm.ts), so 5 is "no minimum". */
+	/**
+	 * One slider for the distance, both ends open: the shortest walks the ingest makes are 5 km
+	 * (scripts/ingest/osm.ts) and the longest about 25, so 5 is "no minimum" and 25 "no maximum".
+	 */
 	let minKm = $state(5);
-
-	/** The two distance sliders push each other along rather than cross into an empty list. */
-	function setMinKm(km: number) {
-		minKm = km;
-		if (maxKm < 25 && maxKm < km) maxKm = Math.min(25, km);
-	}
-	function setMaxKm(km: number) {
-		maxKm = km;
-		if (minKm > km) minKm = Math.max(5, km);
-	}
+	let maxKm = $state(25);
+	const distanceLabel = $derived(
+		minKm <= 5 && maxKm >= 25
+			? 'alles'
+			: minKm <= 5
+				? `≤ ${maxKm} km`
+				: maxKm >= 25
+					? `≥ ${minKm} km`
+					: minKm === maxKm
+						? `${minKm} km`
+						: `${minKm}–${maxKm} km`
+	);
 	let hideDone = $state(false);
 	const collections = Object.keys(COLLECTION_LABELS) as Collection[];
 	let shown = $state<Collection[]>([...collections]);
@@ -662,30 +667,18 @@
 					<input type="range" min="30" max="180" step="15" bind:value={maxTravel} />
 					<output class="tabular">{maxTravel >= 180 ? 'alles' : formatDuration(maxTravel)}</output>
 				</label>
-				<label>
-					<span>Min. afstand</span>
-					<input
-						type="range"
-						min="5"
-						max="20"
-						step="1"
-						value={minKm}
-						oninput={(e) => setMinKm(e.currentTarget.valueAsNumber)}
+				<div class="row" role="group" aria-labelledby="distance-label">
+					<span id="distance-label">Afstand</span>
+					<RangeSlider
+						min={5}
+						max={25}
+						bind:low={minKm}
+						bind:high={maxKm}
+						lowLabel="Minimale afstand"
+						highLabel="Maximale afstand"
 					/>
-					<output class="tabular">{minKm <= 5 ? 'alles' : `${minKm} km`}</output>
-				</label>
-				<label>
-					<span>Max. afstand</span>
-					<input
-						type="range"
-						min="8"
-						max="25"
-						step="1"
-						value={maxKm}
-						oninput={(e) => setMaxKm(e.currentTarget.valueAsNumber)}
-					/>
-					<output class="tabular">{maxKm >= 25 ? 'alles' : `${maxKm} km`}</output>
-				</label>
+					<output class="tabular">{distanceLabel}</output>
+				</div>
 				{#if !routeId}
 					<div class="kinds" role="group" aria-label="Soort wandeling">
 						{#each collections as c (c)}
@@ -1018,7 +1011,8 @@
 		font-size: var(--step--1);
 	}
 
-	.filters > label {
+	.filters > label,
+	.filters > .row {
 		display: grid;
 		grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) auto;
 		align-items: center;
@@ -1026,8 +1020,9 @@
 		color: var(--muted);
 	}
 
+	/* Wide enough for "12–18 km", so a slider doesn't shrink under your thumb as its value changes. */
 	.filters output {
-		min-width: 3.2rem;
+		min-width: 3.75rem;
 		color: var(--ink);
 		font-weight: 600;
 		text-align: right;
