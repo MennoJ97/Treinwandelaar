@@ -93,7 +93,7 @@
 				<span
 					class="wait"
 					style="flex-grow: {part.share}"
-					title="Overstappen in {part.at}: {part.minutes} min"
+					title="Overstappen op {part.at}: {part.minutes} min"
 				></span>
 			{/if}
 		{/each}

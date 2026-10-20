@@ -353,7 +353,7 @@
 			filter: ['==', ['geometry-type'], 'Point'],
 			minzoom: 9,
 			layout: {
-				'text-field': ['concat', 'overstappen in ', ['get', 'name']],
+				'text-field': ['concat', 'overstappen op ', ['get', 'name']],
 				'text-size': 11,
 				'text-offset': [0, 0.9],
 				'text-anchor': 'top',

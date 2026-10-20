@@ -38,7 +38,7 @@
 				{s.label}{#if i === steps.length - 1}<span class="unit"> min</span>{/if}
 			</li>{/each}
 	</ol>
-	<p class="none"><span class="swatch" aria-hidden="true"></span>geen trein</p>
+	<p class="none"><span class="swatch" aria-hidden="true"></span>geen reistijd</p>
 	{#if transit}
 		<p class="transit">
 			<span><span class="rail" aria-hidden="true"></span>trein</span>
