@@ -36,7 +36,7 @@ describe('fillTemplate', () => {
 		const id = 'c14f62d1-11d6-4d00-a637-b5e98067bf64';
 		const out = fillTemplate(html, 'https://walks.example.org', undefined, id);
 		expect(out).toContain(
-			`<script defer src="/_u/script.js" data-website-id="${id}" data-domains="walks.example.org" data-do-not-track="true"></script>`
+			`<script defer src="/_u/script.js" data-website-id="${id}" data-domains="walks.example.org" data-do-not-track="true" data-performance="true"></script>`
 		);
 		expect(out).not.toContain('%');
 	});
