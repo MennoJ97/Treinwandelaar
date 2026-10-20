@@ -242,6 +242,7 @@
 						: `${minKm}–${maxKm} km`
 	);
 	let hideDone = $state(false);
+	let onlyWishlist = $state(false);
 	const collections = Object.keys(COLLECTION_LABELS) as Collection[];
 	let shown = $state<Collection[]>([...collections]);
 	const countBy = $derived(
@@ -289,6 +290,7 @@
 			maxKm < 25,
 			shown.length < collections.filter((c) => countBy[c]).length,
 			hideDone,
+			onlyWishlist,
 			noBus,
 			hideDisrupted
 		].filter(Boolean).length
@@ -303,6 +305,7 @@
 			// On one route, its own day walks; the route says what kind they are.
 			if (routeId ? !w.id.startsWith(`${routeId}:`) : !shown.includes(w.collection)) return false;
 			if (hideDone && w.status === 'done') return false;
+			if (onlyWishlist && w.status !== 'wishlist') return false;
 			if (noBus && needsBus(w)) return false;
 			if (hideDisrupted && walkDisruptions(w).length) return false;
 			return true;
@@ -696,6 +699,9 @@
 				{/if}
 				<div class="checks">
 					{#if !data.demo}
+						<label
+							><input type="checkbox" bind:checked={onlyWishlist} /> Alleen wandelingen die ik wil lopen</label
+						>
 						<label><input type="checkbox" bind:checked={hideDone} /> Verberg gelopen</label>
 					{/if}
 					<label><input type="checkbox" bind:checked={noBus} /> Alleen station tot station</label>
@@ -791,6 +797,7 @@
 									{w.isLoop ? '(rondje)' : `naar ${endLabel(w)}`}
 									{#if needsBus(w)}<em>met bus</em>{/if}
 									{#if w.status === 'done'}<em class="done">gelopen</em>{/if}
+									{#if w.status === 'wishlist'}<em class="wishlist">wil ik lopen</em>{/if}
 									{#if hits.length}
 										<em class="disrupted"
 											>{hits.some((d) => d.type === 'storing') ? 'storing' : 'werkzaamheden'}</em
@@ -1211,7 +1218,8 @@
 		font-weight: 700;
 	}
 
-	.stations em.done {
+	.stations em.done,
+	.stations em.wishlist {
 		color: var(--path);
 	}
 
