@@ -3,6 +3,7 @@
 	import FeederLeg from './FeederLeg.svelte';
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
+	import { track } from '#lib/track.js';
 	import {
 		alongSentences,
 		endLabel,
@@ -754,13 +755,18 @@
 			>{/if}
 		<!-- Wandelnet's own file where it has one; otherwise ours, built from the route line. Turned
 		     around, always ours: theirs runs the one way. -->
-		{#if walk.gpxUrl && !reversed}<a href={walk.gpxUrl} target="_blank" rel="noreferrer"
-				>GPX downloaden</a
+		{#if walk.gpxUrl && !reversed}<a
+				href={walk.gpxUrl}
+				target="_blank"
+				rel="noreferrer"
+				onclick={() => track('gpx-download', { id: walk.id, file: 'wandelnet' })}>GPX downloaden</a
 			>
 		{:else}<a
 				href="/api/walks/{encodeURIComponent(walk.id)}/gpx{reversed ? '?reverse=1' : ''}"
 				download
-				data-sveltekit-reload>{reversed ? 'GPX andersom downloaden' : 'GPX downloaden'}</a
+				data-sveltekit-reload
+				onclick={() => track('gpx-download', { id: walk.id, reverse: reversed })}
+				>{reversed ? 'GPX andersom downloaden' : 'GPX downloaden'}</a
 			>{/if}
 		{#if walk.source === 'osm'}
 			<a href={osmNoteUrl(walk.geometry[0])} target="_blank" rel="noreferrer"

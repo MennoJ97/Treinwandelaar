@@ -14,6 +14,11 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
+
+	interface Window {
+		/** Umami's tracker, when app.html loaded it (see lib/track.ts). */
+		umami?: { track(event: string, data?: Record<string, string | number | boolean>): void };
+	}
 }
 
 export {};
