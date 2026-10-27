@@ -738,12 +738,10 @@
 	{/if}
 
 	<section class="plan" aria-labelledby="plan-title">
-		<h3 id="plan-title">Je dag</h3>
-		<div class="when">
-			<label>Datum <input type="date" bind:value={date} /></label>
-			<label>Vertrek vanaf <input type="time" bind:value={time} step="300" /></label>
+		<!-- Saved, the day out is under "Mijn reizen" on the list, to open again with these trains. -->
+		<div class="plan-head">
+			<h3 id="plan-title">Je dag</h3>
 			{#if !demo && onsavetrip}
-				<!-- Saved, the day out is under "Mijn reizen" on the list, to open again with these trains. -->
 				<button
 					type="button"
 					class="save-trip"
@@ -757,6 +755,10 @@
 							: 'Bewaar deze reis'}</button
 				>
 			{/if}
+		</div>
+		<div class="when">
+			<label>Datum <input type="date" bind:value={date} /></label>
+			<label>Vertrek vanaf <input type="time" bind:value={time} step="300" /></label>
 		</div>
 
 		{#each disruptions as d (d.id)}
@@ -1176,11 +1178,22 @@
 		margin-bottom: 14px;
 	}
 
-	/* Bottom-aligned with the inputs beside it, which sit under their labels. */
+	/* The heading's row has room to spare: the button rides on it instead of taking a row of its own. */
+	.plan-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		margin: 24px 0 8px;
+	}
+
+	.plan-head h3 {
+		margin: 0;
+	}
+
 	.save-trip {
-		align-self: flex-end;
-		margin-left: auto;
-		padding: 5px 12px;
+		flex: none;
+		padding: 4px 12px;
 		border: 1px solid var(--line);
 		border-radius: 999px;
 		background: var(--surface);

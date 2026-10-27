@@ -966,10 +966,12 @@
 			<div class="count">
 				<p>
 					{#if routeId}
-						{visible.length} kant-en-klare dagwandelingen op deze route
+						{visible.length} etappes op deze route
 					{:else}
-						{visible.length} van {walks.length} ·
-						<a href="/route/" data-sveltekit-reload>alle op een rij</a>
+						{visible.length} van
+						<a href="/route/" data-sveltekit-reload title="Alle wandelingen op een rij"
+							>alle {walks.length}</a
+						>
 					{/if}
 				</p>
 				<label class="sort">
@@ -1451,7 +1453,8 @@
 		font-size: var(--step--1);
 	}
 
-	/* The sort keeps to the right; when the count's text is too long for both, it drops below. */
+	/* The sort keeps to the right. With the phone's text size turned up it may not fit beside the
+	   count: then it starts the next line, rather than hanging alone at its end. */
 	.count {
 		display: flex;
 		flex-wrap: wrap;
@@ -1468,7 +1471,6 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		margin-left: auto;
 	}
 
 	.sort select {
