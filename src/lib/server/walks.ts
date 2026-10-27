@@ -82,7 +82,7 @@ const toSummary = (r: WalkRow): WalkSummary => ({
  * users get everything except OSM's copies of walks Wandelnet's data already has (with its photos and
  * ratings); the OSM ingest marks those.
  */
-const visibleTo = (user: string | null) =>
+export const visibleTo = (user: string | null) =>
 	user === null ? `w.source = 'osm'` : `not w.wandelnet_duplicate`;
 
 /** YYYY-MM-DD of the last OpenStreetMap download, as recorded by the ingest. */
@@ -315,6 +315,8 @@ export interface UserWalkUpdate {
 	status?: 'wishlist' | 'done' | null;
 	ownRating?: number | null;
 	notes?: string | null;
+	/** The day you walked it (YYYY-MM-DD), when marking it done: a saved trip's, say. Default today. */
+	doneDate?: string;
 }
 
 export function updateUserWalk(db: DatabaseSync, user: string, id: string, update: UserWalkUpdate) {
@@ -328,11 +330,11 @@ export function updateUserWalk(db: DatabaseSync, user: string, id: string, updat
 	};
 	const status = update.status !== undefined ? update.status : (current.status ?? null);
 	const doneDate =
-		status === 'done' && current.status !== 'done'
-			? new Date().toISOString().slice(0, 10)
-			: status === 'done'
-				? (current.done_date ?? null)
-				: null;
+		status !== 'done'
+			? null
+			: (update.doneDate ??
+				(current.status === 'done' ? current.done_date : null) ??
+				new Date().toISOString().slice(0, 10));
 	db.prepare(
 		`insert into user_walk (username, walk_id, status, own_rating, notes, done_date)
 		 values (?, ?, ?, ?, ?, ?)

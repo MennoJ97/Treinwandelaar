@@ -60,6 +60,22 @@ describe('personal layer per user', () => {
 		});
 	});
 
+	it('marks a walk done on the day given, else keeps the day it was first marked', () => {
+		const db = freshDb();
+		const doneDate = () =>
+			(
+				db.prepare('select done_date from user_walk where walk_id = ?').get('w:1') as {
+					done_date: string | null;
+				}
+			).done_date;
+		updateUserWalk(db, 'menno', 'w:1', { status: 'done', doneDate: '2026-10-31' });
+		expect(doneDate()).toBe('2026-10-31');
+		updateUserWalk(db, 'menno', 'w:1', { ownRating: 4 });
+		expect(doneDate()).toBe('2026-10-31');
+		updateUserWalk(db, 'menno', 'w:1', { status: null });
+		expect(doneDate()).toBeNull();
+	});
+
 	it('moves single-user rows from older databases to the local user', () => {
 		const db = freshDb();
 		db.exec(`drop table user_walk;

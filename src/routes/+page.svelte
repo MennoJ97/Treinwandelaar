@@ -11,15 +11,18 @@
 	import RoutePlanner from '#lib/components/RoutePlanner.svelte';
 	import RangeSlider from '#lib/components/RangeSlider.svelte';
 	import { stretchId } from '#lib/path.js';
+	import { dropTrains, readPlan, writePlan, type TripPlan } from '#lib/plan.js';
 	import { track } from '#lib/track.js';
 	import { amsterdamYmd, formatDuration, nextSaturdayMorning, travelBand } from '#lib/itinerary.js';
 	import {
 		COLLECTION_LABELS,
 		type Collection,
 		type Disruption,
+		type Here,
 		type PathDetail,
 		type Reachability,
 		type ReachabilityResponse,
+		type SavedTrip,
 		type TripLeg,
 		type WalkDetail as WalkDetailData,
 		type WalkSummary
@@ -222,6 +225,7 @@
 		else url.searchParams.delete('route');
 		url.searchParams.delete('walk');
 		url.searchParams.delete('reverse');
+		writePlan(url.searchParams, null);
 		goto(url, { reset: false, replace: true });
 	}
 
@@ -437,6 +441,8 @@
 		const url = new URL(page.url.href);
 		if (reversed) url.searchParams.delete('reverse');
 		else url.searchParams.set('reverse', '1');
+		// Turned around, it's other trains.
+		dropTrains(url.searchParams);
 		goto(url, { reset: false, replace: true });
 	}
 
@@ -459,6 +465,100 @@
 	function keepTrip(t: { date: string; time: string }) {
 		if (t.date >= today && t.date <= lastDay) day = t.date;
 		trip = { ...t, day };
+	}
+
+	/**
+	 * The open walk's plan, in the link so a reload, a bookmark or a saved trip opens it again. Read
+	 * when the walk opens; written back a moment after each change, without a new history entry.
+	 */
+	const linkPlan = $derived(readPlan(page.url.searchParams));
+	let planTimer: ReturnType<typeof setTimeout> | undefined;
+	function onplan(plan: TripPlan) {
+		const id = selectedId;
+		clearTimeout(planTimer);
+		planTimer = setTimeout(() => {
+			// The walk may have closed or changed in the meantime: its plan isn't the link's any more.
+			if (!id || page.url.searchParams.get('walk') !== id) return;
+			const url = new URL(page.url.href);
+			writePlan(url.searchParams, plan);
+			if (url.search !== page.url.search) goto(url, { reset: false, replace: true });
+		}, 400);
+	}
+
+	// --- Saved days out ("Mijn reizen") -----------------------------------------------------------------
+	let savedTrips = $state.raw<SavedTrip[]>(untrack(() => data.savedTrips));
+	const upcomingTrips = $derived(savedTrips.filter((t) => t.date >= today));
+	/** Days gone by that you haven't said anything about yet: walked, or not after all. */
+	const pastTrips = $derived(savedTrips.filter((t) => t.date < today));
+
+	async function changeTrips(req: Promise<Response>) {
+		const res = await req;
+		if (res.ok) savedTrips = await res.json();
+	}
+
+	function saveTrip(walkId: string, plan: TripPlan) {
+		track('trip-save', { id: walkId });
+		return changeTrips(
+			fetch('/api/saved-trips', {
+				method: 'PUT',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ walkId, reversed, ...plan })
+			})
+		);
+	}
+
+	function forgetTrip(walkId: string, date: string) {
+		const params = new URLSearchParams({ walk: walkId, date });
+		return changeTrips(fetch(`/api/saved-trips?${params}`, { method: 'DELETE' }));
+	}
+
+	/** You walked it: done, on the day you'd planned, and off the list. */
+	async function walkedTrip(t: SavedTrip) {
+		const res = await fetch(`/api/walks/${encodeURIComponent(t.walkId)}`, {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ status: 'done', doneDate: t.date })
+		});
+		if (!res.ok) return;
+		onsaved(await res.json());
+		await forgetTrip(t.walkId, t.date);
+	}
+
+	/** A saved day out's own link, for opening it in a new tab. */
+	function tripHref(t: SavedTrip) {
+		const params = new URLSearchParams({ walk: t.walkId });
+		if (t.reversed) params.set('reverse', '1');
+		writePlan(params, t);
+		return `/?${params}`;
+	}
+
+	/** Open a saved day out: the walk, the way round you saved it, and its plan with its trains. */
+	async function openTrip(t: SavedTrip) {
+		opening?.abort();
+		if (!detail(t.walkId)) {
+			const controller = (opening = new AbortController());
+			try {
+				remember(await fetchWalk(t.walkId, controller.signal));
+			} catch {
+				return;
+			}
+		}
+		track('trip-open', { id: t.walkId });
+		const url = new URL(page.url.href);
+		url.searchParams.set('walk', t.walkId);
+		if (t.reversed) url.searchParams.set('reverse', '1');
+		else url.searchParams.delete('reverse');
+		writePlan(url.searchParams, t);
+		goto(url, { reset: false });
+	}
+
+	/** Where you are while you follow yourself on the open walk (the map's location button). */
+	let here = $state.raw<Here | null>(null);
+	let walkMap: WalkMap | undefined = $state();
+	function onposition(h: Here | null) {
+		// That someone follows a walk, never where they are.
+		if (h && !here && selectedId) track('walk-follow', { id: selectedId });
+		here = h;
 	}
 
 	/** The open walk's chosen trains out and back, drawn faintly under it on the map. */
@@ -516,8 +616,10 @@
 		const url = new URL(page.url.href);
 		if (id) url.searchParams.set('walk', id);
 		else url.searchParams.delete('walk');
-		// Another walk (or none) starts the right way round.
+		// Another walk (or none) starts the right way round, on the same day but its own trains.
 		url.searchParams.delete('reverse');
+		if (id) dropTrains(url.searchParams);
+		else writePlan(url.searchParams, null);
 		goto(url, { reset: false, replaceState });
 	}
 
@@ -608,6 +710,7 @@
 
 		<div class="map-area" bind:this={mapArea} style:--sheet-cover="{scrollY}px">
 			<WalkMap
+				bind:this={walkMap}
 				walks={mapWalks}
 				{path}
 				stations={data.stations}
@@ -622,6 +725,7 @@
 				routeKinds={showRoutes && !routeId ? shown : []}
 				onroute={pickRoute}
 				onlocate={(code) => (home = code)}
+				{onposition}
 				obscured={mapCovered}
 			/>
 			<MapLegend
@@ -646,6 +750,8 @@
 					{day}
 					trip={trip?.day === day ? trip : null}
 					ontrip={keepTrip}
+					plan={linkPlan}
+					{onplan}
 					onlegs={(t) => (tripLegs = t)}
 					onrides={(r) => (feederLines = r)}
 					disruptions={walkDisruptions(selected)}
@@ -654,6 +760,11 @@
 					onreverse={reverse}
 					onopen={(id) => select(id)}
 					{onsaved}
+					{here}
+					onfollow={() => walkMap?.follow() ?? false}
+					saved={savedTrips.filter((t) => t.walkId === selected.id)}
+					onsavetrip={(plan) => saveTrip(selected.id, plan)}
+					onforgettrip={(date) => forgetTrip(selected.id, date)}
 				/>
 			{/key}
 		{:else}
@@ -667,6 +778,52 @@
 					<a href="/login" data-sveltekit-reload>Inloggen</a> voor meer wandelingen en om bij te houden
 					wat je wilt lopen.
 				</p>
+			{/if}
+
+			<!-- Your saved days out: one line each, the next one first. -->
+			{#if savedTrips.length}
+				<section class="my-trips" aria-labelledby="my-trips-title">
+					<h2 id="my-trips-title">Mijn reizen</h2>
+					<ul>
+						{#each upcomingTrips as t (t.walkId + t.date)}
+							<li>
+								<a
+									href={tripHref(t)}
+									onclick={(e) => {
+										if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+										e.preventDefault();
+										openTrip(t);
+									}}
+									><span class="when tabular">{dayLabel(t.date)} · {t.out ?? t.time}</span>
+									{t.walkName}</a
+								>
+								<button
+									type="button"
+									class="forget"
+									aria-label="Reis {t.walkName} van {dayLabel(t.date)} niet meer bewaren"
+									title="Niet meer bewaren"
+									onclick={() => forgetTrip(t.walkId, t.date)}>×</button
+								>
+							</li>
+						{/each}
+						{#each pastTrips as t (t.walkId + t.date)}
+							<li class="past">
+								<span
+									><span class="when tabular">{dayLabel(t.date)}</span>
+									{t.walkName}: gelopen?</span
+								>
+								<button type="button" class="walked" onclick={() => walkedTrip(t)}>Ja</button>
+								<button
+									type="button"
+									class="forget"
+									aria-label="Reis {t.walkName} van {dayLabel(t.date)} weghalen"
+									title="Weghalen"
+									onclick={() => forgetTrip(t.walkId, t.date)}>×</button
+								>
+							</li>
+						{/each}
+					</ul>
+				</section>
 			{/if}
 
 			<!-- Outside the filters, which fold away on a phone: planning on a route is a way in, not a filter. -->
@@ -809,10 +966,12 @@
 			<div class="count">
 				<p>
 					{#if routeId}
-						{visible.length} kant-en-klare dagwandelingen op deze route
+						{visible.length} etappes op deze route
 					{:else}
-						{visible.length} van {walks.length} ·
-						<a href="/route/" data-sveltekit-reload>alle op een rij</a>
+						{visible.length} van
+						<a href="/route/" data-sveltekit-reload title="Alle wandelingen op een rij"
+							>alle {walks.length}</a
+						>
 					{/if}
 				</p>
 				<label class="sort">
@@ -1040,6 +1199,75 @@
 		color: inherit;
 	}
 
+	.my-trips {
+		margin: 6px 20px 2px;
+		font-size: var(--step--1);
+	}
+
+	.my-trips h2 {
+		margin: 0 0 2px;
+		color: var(--muted);
+		font-size: inherit;
+		font-weight: 400;
+	}
+
+	.my-trips ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.my-trips li {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.my-trips li > a,
+	.my-trips li > span {
+		flex: 1;
+		min-width: 0;
+		padding: 3px 0;
+		overflow: hidden;
+		color: var(--ink);
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.my-trips li > a {
+		text-decoration: none;
+	}
+
+	.my-trips li > a:hover {
+		text-decoration: underline;
+	}
+
+	.my-trips .when {
+		font-weight: 600;
+	}
+
+	.my-trips button {
+		flex: none;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--muted);
+		cursor: pointer;
+		font: inherit;
+	}
+
+	.my-trips .walked {
+		padding: 0 10px;
+		color: var(--ink);
+	}
+
+	.my-trips .forget {
+		width: 1.6rem;
+		height: 1.6rem;
+		padding: 0;
+		line-height: 1;
+	}
+
 	.route-pick {
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr);
@@ -1225,7 +1453,8 @@
 		font-size: var(--step--1);
 	}
 
-	/* The sort keeps to the right; when the count's text is too long for both, it drops below. */
+	/* The sort keeps to the right. With the phone's text size turned up it may not fit beside the
+	   count: then it starts the next line, rather than hanging alone at its end. */
 	.count {
 		display: flex;
 		flex-wrap: wrap;
@@ -1242,7 +1471,6 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		margin-left: auto;
 	}
 
 	.sort select {

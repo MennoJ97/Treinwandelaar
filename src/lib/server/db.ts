@@ -17,6 +17,20 @@ create table if not exists user_walk (
 	primary key (username, walk_id)
 );`;
 
+/* Days out a user saved: a walk on a date with the trains they picked, to open again later. */
+const USER_TRIP = `
+create table if not exists user_trip (
+	username text not null,
+	walk_id text not null references walks(id) on delete cascade,
+	date text not null,               -- YYYY-MM-DD
+	reversed integer not null default 0,
+	time text not null,               -- HH:MM, the planner's "leave from"
+	out_train text,                   -- HH:MM departure of the train out; null: the first that fits
+	back_train text,                  -- HH:MM departure of the train back
+	saved_at text not null default (datetime('now')),
+	primary key (username, walk_id, date)
+);`;
+
 const SCHEMA = `
 create table if not exists stations (
 	code text primary key,
@@ -99,6 +113,7 @@ create table if not exists path_bus_stop (
 );
 
 ${USER_WALK}
+${USER_TRIP}
 
 -- Rail timetable from the OVapi GTFS (scripts/ingest/gtfs.ts), for the offline travel-time map.
 create table if not exists gtfs_service_date (

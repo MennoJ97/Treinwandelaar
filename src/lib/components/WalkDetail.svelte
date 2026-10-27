@@ -3,6 +3,8 @@
 	import FeederLeg from './FeederLeg.svelte';
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
+	import { locateOnLine } from '#lib/geo.js';
+	import type { TripPlan } from '#lib/plan.js';
 	import { track } from '#lib/track.js';
 	import {
 		alongSentences,
@@ -21,6 +23,7 @@
 		amsterdamYmd,
 		formatDuration,
 		formatTime,
+		minutesBetween,
 		walkMinutes,
 		breakMinutes,
 		DEFAULT_PACE
@@ -31,6 +34,8 @@
 		WALKABLE_STATION_M,
 		type Disruption,
 		type Feeders,
+		type Here,
+		type SavedTrip,
 		type Station,
 		type TripLeg,
 		type TripOption,
@@ -50,6 +55,10 @@
 		trip?: { date: string; time: string } | null;
 		/** Every change of date or time, so the next walk can start from it. */
 		ontrip?: (trip: { date: string; time: string }) => void;
+		/** A plan to open with, from the link: its date and time, and the trains to pick if they run. */
+		plan?: TripPlan | null;
+		/** Every change of the plan, trains included, for the link. */
+		onplan?: (plan: TripPlan) => void;
 		/** The legs of the chosen trains out and back, one list per trip, to draw on the map. */
 		onlegs?: (trips: TripLeg[][]) => void;
 		/** Where the chosen buses between station and route run, to draw on the map; empty: unknown. */
@@ -65,6 +74,16 @@
 		onopen?: (id: string) => void;
 		/** After a save, with the walk as the server now has it. */
 		onsaved: (walk: WalkDetail) => void;
+		/** Where you are, while you follow yourself on the map. */
+		here?: Here | null;
+		/** Start following you on the map; false when the browser won't give your location. */
+		onfollow?: () => boolean;
+		/** Your saved days out on this walk. */
+		saved?: SavedTrip[];
+		/** Save this plan as a day out on its date (again: the new plan replaces the old one). */
+		onsavetrip?: (plan: TripPlan) => void;
+		/** Forget the day out saved for `date`. */
+		onforgettrip?: (date: string) => void;
 	}
 
 	let {
@@ -75,6 +94,8 @@
 		day,
 		trip,
 		ontrip,
+		plan = null,
+		onplan,
 		onlegs,
 		onrides,
 		disruptions,
@@ -82,7 +103,12 @@
 		reversed = false,
 		onreverse,
 		onopen,
-		onsaved
+		onsaved,
+		here = null,
+		onfollow,
+		saved = [],
+		onsavetrip,
+		onforgettrip
 	}: Props = $props();
 
 	/** What it passes (OSM's walks), as on the walk's own page. */
@@ -123,8 +149,23 @@
 	// else that morning. Read once on purpose: after opening, the date is yours to change here.
 	const startDay = untrack(() => day);
 	const initial =
+		untrack(() => plan) ??
 		untrack(() => trip) ??
 		(startDay === amsterdamYmd() ? defaultStart() : { date: startDay, time: '09:00' });
+	/**
+	 * The link's trains, picked once their lists are in (if they still run then). Until that, they
+	 * stay in the link; a train that isn't there any more gets a note instead.
+	 */
+	let wantOut = untrack(() => plan?.out ?? null);
+	let wantBack = untrack(() => plan?.back ?? null);
+	let missedOut = $state<string | null>(null);
+	let missedBack = $state<string | null>(null);
+	/** Index of the train leaving at `clock` (HH:MM), or the first one; tells `missed` if it's gone. */
+	function pick(trips: TripOption[], clock: string | null, missed: (c: string | null) => void) {
+		const i = clock ? trips.findIndex((t) => formatTime(t.departure) === clock) : 0;
+		missed(i < 0 ? clock : null);
+		return Math.max(0, i);
+	}
 	let date = $state(initial.date);
 	let time = $state(initial.time);
 	$effect(() => ontrip?.({ date, time }));
@@ -161,13 +202,57 @@
 	const startsAtHome = $derived(walk.startStation === home.code);
 	const endsAtHome = $derived(walk.endStation === home.code);
 
-	async function fetchTrips(from: string, to: string, dateTime: string, signal?: AbortSignal) {
+	/**
+	 * Trains from `from` to `to` around `dateTime`. Out walking the signal comes and goes: each answer
+	 * is kept in this browser, and when the server can't be reached the last one comes back instead,
+	 * with `savedAt` saying from when.
+	 */
+	async function fetchTrips(
+		from: string,
+		to: string,
+		dateTime: string,
+		signal?: AbortSignal
+	): Promise<{ trips: TripOption[]; savedAt: number | null }> {
 		const params = new URLSearchParams({ from, to, dateTime });
-		const res = await fetch(`/api/trips?${params}`, { signal });
+		const key = params.toString();
+		let res: Response;
+		try {
+			res = await fetch(`/api/trips?${params}`, { signal });
+		} catch (err) {
+			const kept = signal?.aborted ? null : keptTrains(key);
+			if (kept) return { trips: kept.trips, savedAt: kept.at };
+			throw err;
+		}
 		if (!res.ok)
 			throw new Error((await res.json().catch(() => null))?.message ?? `HTTP ${res.status}`);
-		return (await res.json()) as TripOption[];
+		const trips = (await res.json()) as TripOption[];
+		keepTrains(key, trips);
+		return { trips, savedAt: null };
 	}
+
+	/** The last few train lists, newest first, by request. */
+	const TRAINS_KEY = 'treinwandelaar.trains';
+	const KEEP_TRAINS = 6;
+	type Kept = { key: string; at: number; trips: TripOption[] };
+	function readKept(): Kept[] {
+		try {
+			return JSON.parse(localStorage.getItem(TRAINS_KEY) ?? '[]');
+		} catch {
+			return [];
+		}
+	}
+	function keepTrains(key: string, trips: TripOption[]) {
+		const kept = [{ key, at: Date.now(), trips }, ...readKept().filter((k) => k.key !== key)];
+		try {
+			localStorage.setItem(TRAINS_KEY, JSON.stringify(kept.slice(0, KEEP_TRAINS)));
+		} catch {
+			/* no storage (private mode, or full): just not kept */
+		}
+	}
+	const keptTrains = (key: string) => readKept().find((k) => k.key === key) ?? null;
+	/** When the trains on screen were fetched, if they're kept ones because the server was out of reach. */
+	let outSavedAt = $state<number | null>(null);
+	let backSavedAt = $state<number | null>(null);
 
 	$effect(() => {
 		if (!hasNsKey || startsAtHome || !walk.startStation) {
@@ -179,14 +264,14 @@
 		outIndex = 0;
 		const requested = amsterdamIso(date, time);
 		fetchTrips(home.code, walk.startStation, requested, controller.signal)
-			// NS also returns a few trains just before the requested time; only show ones after it.
-			.then(
-				(data) =>
-					(outbound = {
-						status: 'done',
-						data: data.filter((t) => new Date(t.departure) >= new Date(requested))
-					})
-			)
+			.then(({ trips: data, savedAt }) => {
+				outSavedAt = savedAt;
+				// NS also returns a few trains just before the requested time; only show ones after it.
+				const trips = data.filter((t) => new Date(t.departure) >= new Date(requested));
+				outIndex = pick(trips, wantOut, (c) => (missedOut = c));
+				wantOut = null;
+				outbound = { status: 'done', data: trips };
+			})
 			.catch((err) => {
 				if (!controller.signal.aborted) outbound = { status: 'error', message: err.message };
 			});
@@ -315,13 +400,13 @@
 		back = { status: 'loading' };
 		backIndex = 0;
 		fetchTrips(walk.endStation, home.code, end, controller.signal)
-			.then(
-				(data) =>
-					(back = {
-						status: 'done',
-						data: data.filter((t) => new Date(t.departure) >= new Date(end))
-					})
-			)
+			.then(({ trips: data, savedAt }) => {
+				backSavedAt = savedAt;
+				const trips = data.filter((t) => new Date(t.departure) >= new Date(end));
+				backIndex = pick(trips, wantBack, (c) => (missedBack = c));
+				wantBack = null;
+				back = { status: 'done', data: trips };
+			})
 			.catch((err) => {
 				if (!controller.signal.aborted) back = { status: 'error', message: err.message };
 			});
@@ -334,7 +419,11 @@
 		if (!last) return;
 		loadingLater = true;
 		try {
-			const more = await fetchTrips(walk.endStation, home.code, addMinutes(last.departure, 1));
+			const { trips: more } = await fetchTrips(
+				walk.endStation,
+				home.code,
+				addMinutes(last.departure, 1)
+			);
 			const seen = new Set(back.data.map((t) => t.departure));
 			back = {
 				status: 'done',
@@ -346,6 +435,29 @@
 	}
 
 	const homeArrival = $derived(back.status === 'done' ? back.data[backIndex]?.arrival : null);
+
+	/** The plan as it stands: a train still loading keeps the one the link asked for. */
+	const current = $derived.by((): TripPlan => {
+		const out = outbound.status === 'done' ? outbound.data[outIndex] : null;
+		const backTrain = back.status === 'done' ? back.data[backIndex] : null;
+		return {
+			date,
+			time,
+			out: out ? formatTime(out.departure) : wantOut,
+			back: backTrain ? formatTime(backTrain.departure) : wantBack
+		};
+	});
+	$effect(() => onplan?.(current));
+
+	/** The day out saved for this date, and whether it's the plan on screen. */
+	const savedTrip = $derived(saved.find((t) => t.date === date) ?? null);
+	const savedAsShown = $derived(
+		!!savedTrip &&
+			savedTrip.reversed === reversed &&
+			savedTrip.time === current.time &&
+			savedTrip.out === current.out &&
+			savedTrip.back === current.back
+	);
 
 	// The trains you picked, for the map; gone from it again when the walk closes.
 	$effect(() => {
@@ -362,6 +474,48 @@
 		onrides?.({ start: startRide?.geometry ?? [], end: endRide?.geometry ?? [] });
 		return () => onrides?.({ start: [], end: [] });
 	});
+
+	// --- Out walking: where you are on the route ----------------------------------------------------
+	/** Further off the line than this and you're not on the route (yet, or any more). */
+	const ON_ROUTE_M = 250;
+	/** Where the last fix put you along the line, so the next one follows on from it. */
+	let lastAlongM = 0;
+	type OnRoute = { offKm: number } | { toGoKm: number; minutes: number };
+	const onRoute = $derived.by((): OnRoute | null => {
+		if (!here) return null;
+		const spot = locateOnLine([here.lng, here.lat], walk.geometry, lastAlongM);
+		if (spot.offM > ON_ROUTE_M) return { offKm: spot.offM / 1000 };
+		lastAlongM = spot.alongM;
+		// In the walk's own kilometres, which can differ a little from its line's.
+		const toGoKm = spot.lengthM ? walk.distanceKm * (1 - spot.alongM / spot.lengthM) : 0;
+		return { toGoKm, minutes: walkMinutes(toGoKm, { speedKmh, breakMinPer10Km }) };
+	});
+
+	/** The bus or train you picked after the walk, and whether you'll make it from here. */
+	const catching = $derived.by(() => {
+		if (!here || !onRoute || !('toGoKm' in onRoute)) return null;
+		let ready = onRoute.minutes;
+		let ride: { what: string; departure: string } | null = null;
+		if (endAccess === 'bus' && endRide) {
+			ready += accessMinutes(endRide.stopM, speedKmh);
+			ride = { what: 'de bus', departure: endRide.departure };
+		} else if (endAccess !== 'bus' && back.status === 'done' && back.data[backIndex]) {
+			if (endAccess === 'walk') ready += accessMinutes(walk.endStationM!, speedKmh);
+			ride = { what: 'de trein', departure: back.data[backIndex].departure };
+		}
+		// Only a ride still to come today: an old plan or another day's says nothing about now.
+		if (!ride || new Date(ride.departure).getTime() < here.time) return null;
+		if (amsterdamYmd(new Date(ride.departure)) !== amsterdamYmd(new Date(here.time))) return null;
+		const spare = minutesBetween(
+			new Date(here.time + ready * 60_000).toISOString(),
+			ride.departure
+		);
+		return { ...ride, spare };
+	});
+
+	/** You're walking today: offer to show where you are. */
+	const walkingToday = $derived(date === amsterdamYmd());
+	let noLocation = $state(false);
 
 	// --- Personal layer -----------------------------------------------------------------------------
 	async function save(update: {
@@ -465,6 +619,45 @@
 		</div>
 	</header>
 
+	{#if here}
+		<p class="onroute" role="status">
+			{#if onRoute && 'offKm' in onRoute}
+				Je bent ± {km(onRoute.offKm)} km van de route.
+			{:else if onRoute}
+				<strong>Nog {km(onRoute.toGoKm)} km</strong>, ± {formatDuration(onRoute.minutes)} tot {endAccess ===
+				'station'
+					? (walk.endStationName ?? walk.endPlace)
+					: routeEndName('end').toLowerCase()}.
+				{#if catching}
+					{@const at = formatTime(catching.departure)}
+					{#if catching.spare >= 15}
+						Je haalt {catching.what} van {at} ruim, met ± {formatDuration(catching.spare)} over.
+					{:else if catching.spare >= 0}
+						<span class="tight"
+							>Krap: {catching.what} van {at} haal je met ± {catching.spare} min over.</span
+						>
+					{:else}
+						<span class="late"
+							>{catching.what[0].toUpperCase() + catching.what.slice(1)} van {at} haal je waarschijnlijk
+							niet; kies een latere.</span
+						>
+					{/if}
+				{/if}
+			{/if}
+			{#if here.accuracyM > 100}<span class="muted">
+					(je locatie is onnauwkeurig, ± {Math.round(here.accuracyM)} m)</span
+				>{/if}
+		</p>
+	{:else if walkingToday && onfollow}
+		<button type="button" class="follow" onclick={() => (noLocation = !onfollow())}
+			>Volg mijn locatie op de kaart</button
+		>
+		{#if noLocation}<p class="muted">
+				Je browser geeft je locatie niet door. Geef deze site toestemming in de instellingen van je
+				browser of telefoon.
+			</p>{/if}
+	{/if}
+
 	{#if walk.photos.length}
 		<div class="photos" aria-label="Foto's">
 			{#each walk.photos as photo, i (photo.url)}
@@ -545,7 +738,24 @@
 	{/if}
 
 	<section class="plan" aria-labelledby="plan-title">
-		<h3 id="plan-title">Je dag</h3>
+		<!-- Saved, the day out is under "Mijn reizen" on the list, to open again with these trains. -->
+		<div class="plan-head">
+			<h3 id="plan-title">Je dag</h3>
+			{#if !demo && onsavetrip}
+				<button
+					type="button"
+					class="save-trip"
+					aria-pressed={savedAsShown}
+					title={savedAsShown ? 'Niet meer bewaren' : 'Bewaren onder Mijn reizen'}
+					onclick={() => (savedAsShown ? onforgettrip?.(date) : onsavetrip(current))}
+					>{savedAsShown
+						? '✓ Bewaard'
+						: savedTrip
+							? 'Bewaar wijzigingen'
+							: 'Bewaar deze reis'}</button
+				>
+			{/if}
+		</div>
 		<div class="when">
 			<label>Datum <input type="date" bind:value={date} /></label>
 			<label>Vertrek vanaf <input type="time" bind:value={time} step="300" /></label>
@@ -596,10 +806,21 @@
 						{:else if outbound.status === 'done' && !outbound.data.length}
 							<p class="notice">Geen treinen gevonden rond dit tijdstip. Kies een andere tijd.</p>
 						{:else if outbound.status === 'done'}
+							{#if outSavedAt}<p class="notice">
+									Geen verbinding: dit zijn de treintijden van {formatTime(
+										new Date(outSavedAt).toISOString()
+									)}.
+								</p>{/if}
+							{#if missedOut}<p class="notice">
+									De trein van {missedOut} staat er niet (meer) bij; dit is de eerstvolgende.
+								</p>{/if}
 							<TripOptions
 								trips={outbound.data}
 								selected={outIndex}
-								onselect={(i) => (outIndex = i)}
+								onselect={(i) => {
+									outIndex = i;
+									missedOut = null;
+								}}
 							/>
 						{/if}
 					</div>
@@ -685,10 +906,22 @@
 								Geen treinen meer na aankomst. Vertrek eerder of kies een andere dag.
 							</p>
 						{:else if back.status === 'done'}
+							{#if backSavedAt}<p class="notice">
+									Geen verbinding: dit zijn de treintijden van {formatTime(
+										new Date(backSavedAt).toISOString()
+									)}.
+								</p>{/if}
+							{#if missedBack}<p class="notice">
+									De trein terug van {missedBack} staat er niet (meer) bij; dit is de eerstvolgende die
+									je haalt.
+								</p>{/if}
 							<TripOptions
 								trips={back.data}
 								selected={backIndex}
-								onselect={(i) => (backIndex = i)}
+								onselect={(i) => {
+									backIndex = i;
+									missedBack = null;
+								}}
 								onlater={later}
 								{loadingLater}
 							/>
@@ -852,6 +1085,34 @@
 		font-weight: 600;
 	}
 
+	/* Out walking: the one line you look at, so it sits right under the walk's name. */
+	.onroute {
+		margin: 12px 0 0;
+		padding: 8px 10px;
+		border-left: 3px solid var(--path);
+		background: var(--notice-bg);
+	}
+
+	.onroute .tight {
+		font-weight: 600;
+	}
+
+	.onroute .late {
+		color: var(--warn);
+		font-weight: 600;
+	}
+
+	.follow {
+		margin: 12px 0 0;
+		padding: 5px 12px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--ink);
+		cursor: pointer;
+		font-size: var(--step--1);
+	}
+
 	h3 {
 		margin: 24px 0 8px;
 		font-size: var(--step-1);
@@ -915,6 +1176,36 @@
 		flex-wrap: wrap;
 		gap: 12px;
 		margin-bottom: 14px;
+	}
+
+	/* The heading's row has room to spare: the button rides on it instead of taking a row of its own. */
+	.plan-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		margin: 24px 0 8px;
+	}
+
+	.plan-head h3 {
+		margin: 0;
+	}
+
+	.save-trip {
+		flex: none;
+		padding: 4px 12px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--ink);
+		cursor: pointer;
+		font-size: var(--step--1);
+	}
+
+	.save-trip[aria-pressed='true'] {
+		border-color: var(--path);
+		background: var(--path);
+		color: var(--on-accent);
 	}
 
 	.when label {

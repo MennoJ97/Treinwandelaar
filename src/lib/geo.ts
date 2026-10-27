@@ -79,3 +79,52 @@ function segmentDistance(p: number[], a: number[], b: number[]): number {
 		lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lenSq));
 	return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
 }
+
+/** How much further off a stretch may lie than the closest one and still count as where you are. */
+const SAME_SPOT_M = 75;
+
+/**
+ * Where `point` lies along `line`: metres from the line's start to the closest spot on it, the
+ * line's length, and how far off it the point is. A route can pass the same spot twice (a loop's
+ * start and end, an out-and-back bit); of the stretches about as close as the closest, the one
+ * nearest `nearM` along the line wins, so a fix follows on from the last one instead of jumping
+ * to the end.
+ */
+export function locateOnLine(
+	point: LngLat,
+	line: LngLat[],
+	nearM = 0
+): { alongM: number; lengthM: number; offM: number } {
+	// Local equirectangular metres around the point: at walk scale as good as the real thing.
+	const lat0 = toRad(point[1]);
+	const xy = (p: LngLat) => [
+		toRad(p[0]) * Math.cos(lat0) * EARTH_RADIUS_M,
+		toRad(p[1]) * EARTH_RADIUS_M
+	];
+	const p = xy(point);
+	const spots: { alongM: number; offM: number }[] = [];
+	let lengthM = 0;
+	for (let i = 1; i < line.length; i++) {
+		const a = xy(line[i - 1]);
+		const b = xy(line[i]);
+		const dx = b[0] - a[0];
+		const dy = b[1] - a[1];
+		const segM = Math.hypot(dx, dy);
+		const t =
+			segM === 0
+				? 0
+				: Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / segM ** 2));
+		spots.push({
+			alongM: lengthM + t * segM,
+			offM: Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy))
+		});
+		lengthM += segM;
+	}
+	if (!spots.length)
+		return { alongM: 0, lengthM: 0, offM: line.length ? haversine(point, line[0]) : 0 };
+	const closest = Math.min(...spots.map((s) => s.offM));
+	const best = spots
+		.filter((s) => s.offM <= closest + SAME_SPOT_M)
+		.reduce((x, y) => (Math.abs(y.alongM - nearM) < Math.abs(x.alongM - nearM) ? y : x));
+	return { alongM: best.alongM, lengthM, offM: best.offM };
+}

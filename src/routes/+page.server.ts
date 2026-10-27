@@ -3,6 +3,7 @@ import type { Station } from '#lib/types.js';
 import { db, homeStation, ns } from '#lib/server/context.js';
 import { timetableLastDay } from '#lib/server/railRouter.js';
 import { listPaths } from '#lib/server/paths.js';
+import { listSavedTrips } from '#lib/server/savedTrips.js';
 import { getWalk, listWalks, osmUpdated, wandelnetUpdated, withStages } from '#lib/server/walks.js';
 import { walkPath } from '#lib/walk.js';
 import type { PageServerLoad } from './$types';
@@ -33,6 +34,8 @@ export const load: PageServerLoad = ({ url, locals, untrack }) => {
 		hasNsKey: ns() !== null,
 		/** How far ahead you can pick a travel day: as far as the rail timetable reaches. */
 		lastDay: timetableLastDay(conn),
+		/** Your saved days out (none for the anonymous demo). */
+		savedTrips: locals.user ? listSavedTrips(conn, locals.user) : [],
 		/** Anonymous visitor of the public demo: OpenStreetMap walks only, nothing saved. */
 		demo: locals.user === null,
 		wandelnetUpdated: wandelnetUpdated(conn),
