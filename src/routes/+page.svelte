@@ -11,6 +11,7 @@
 	import RoutePlanner from '#lib/components/RoutePlanner.svelte';
 	import RangeSlider from '#lib/components/RangeSlider.svelte';
 	import { stretchId } from '#lib/path.js';
+	import { dropTrains, readPlan, writePlan, type TripPlan } from '#lib/plan.js';
 	import { track } from '#lib/track.js';
 	import { amsterdamYmd, formatDuration, nextSaturdayMorning, travelBand } from '#lib/itinerary.js';
 	import {
@@ -223,6 +224,7 @@
 		else url.searchParams.delete('route');
 		url.searchParams.delete('walk');
 		url.searchParams.delete('reverse');
+		writePlan(url.searchParams, null);
 		goto(url, { reset: false, replace: true });
 	}
 
@@ -438,6 +440,8 @@
 		const url = new URL(page.url.href);
 		if (reversed) url.searchParams.delete('reverse');
 		else url.searchParams.set('reverse', '1');
+		// Turned around, it's other trains.
+		dropTrains(url.searchParams);
 		goto(url, { reset: false, replace: true });
 	}
 
@@ -460,6 +464,24 @@
 	function keepTrip(t: { date: string; time: string }) {
 		if (t.date >= today && t.date <= lastDay) day = t.date;
 		trip = { ...t, day };
+	}
+
+	/**
+	 * The open walk's plan, in the link so a reload, a bookmark or a saved trip opens it again. Read
+	 * when the walk opens; written back a moment after each change, without a new history entry.
+	 */
+	const linkPlan = $derived(readPlan(page.url.searchParams));
+	let planTimer: ReturnType<typeof setTimeout> | undefined;
+	function onplan(plan: TripPlan) {
+		const id = selectedId;
+		clearTimeout(planTimer);
+		planTimer = setTimeout(() => {
+			// The walk may have closed or changed in the meantime: its plan isn't the link's any more.
+			if (!id || page.url.searchParams.get('walk') !== id) return;
+			const url = new URL(page.url.href);
+			writePlan(url.searchParams, plan);
+			if (url.search !== page.url.search) goto(url, { reset: false, replace: true });
+		}, 400);
 	}
 
 	/** Where you are while you follow yourself on the open walk (the map's location button). */
@@ -526,8 +548,10 @@
 		const url = new URL(page.url.href);
 		if (id) url.searchParams.set('walk', id);
 		else url.searchParams.delete('walk');
-		// Another walk (or none) starts the right way round.
+		// Another walk (or none) starts the right way round, on the same day but its own trains.
 		url.searchParams.delete('reverse');
+		if (id) dropTrains(url.searchParams);
+		else writePlan(url.searchParams, null);
 		goto(url, { reset: false, replaceState });
 	}
 
@@ -658,6 +682,8 @@
 					{day}
 					trip={trip?.day === day ? trip : null}
 					ontrip={keepTrip}
+					plan={linkPlan}
+					{onplan}
 					onlegs={(t) => (tripLegs = t)}
 					onrides={(r) => (feederLines = r)}
 					disruptions={walkDisruptions(selected)}

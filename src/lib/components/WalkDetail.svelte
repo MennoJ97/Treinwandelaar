@@ -4,6 +4,7 @@
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
 	import { locateOnLine } from '#lib/geo.js';
+	import type { TripPlan } from '#lib/plan.js';
 	import { track } from '#lib/track.js';
 	import {
 		alongSentences,
@@ -53,6 +54,10 @@
 		trip?: { date: string; time: string } | null;
 		/** Every change of date or time, so the next walk can start from it. */
 		ontrip?: (trip: { date: string; time: string }) => void;
+		/** A plan to open with, from the link: its date and time, and the trains to pick if they run. */
+		plan?: TripPlan | null;
+		/** Every change of the plan, trains included, for the link. */
+		onplan?: (plan: TripPlan) => void;
 		/** The legs of the chosen trains out and back, one list per trip, to draw on the map. */
 		onlegs?: (trips: TripLeg[][]) => void;
 		/** Where the chosen buses between station and route run, to draw on the map; empty: unknown. */
@@ -82,6 +87,8 @@
 		day,
 		trip,
 		ontrip,
+		plan = null,
+		onplan,
 		onlegs,
 		onrides,
 		disruptions,
@@ -132,8 +139,23 @@
 	// else that morning. Read once on purpose: after opening, the date is yours to change here.
 	const startDay = untrack(() => day);
 	const initial =
+		untrack(() => plan) ??
 		untrack(() => trip) ??
 		(startDay === amsterdamYmd() ? defaultStart() : { date: startDay, time: '09:00' });
+	/**
+	 * The link's trains, picked once their lists are in (if they still run then). Until that, they
+	 * stay in the link; a train that isn't there any more gets a note instead.
+	 */
+	let wantOut = untrack(() => plan?.out ?? null);
+	let wantBack = untrack(() => plan?.back ?? null);
+	let missedOut = $state<string | null>(null);
+	let missedBack = $state<string | null>(null);
+	/** Index of the train leaving at `clock` (HH:MM), or the first one; tells `missed` if it's gone. */
+	function pick(trips: TripOption[], clock: string | null, missed: (c: string | null) => void) {
+		const i = clock ? trips.findIndex((t) => formatTime(t.departure) === clock) : 0;
+		missed(i < 0 ? clock : null);
+		return Math.max(0, i);
+	}
 	let date = $state(initial.date);
 	let time = $state(initial.time);
 	$effect(() => ontrip?.({ date, time }));
@@ -188,14 +210,13 @@
 		outIndex = 0;
 		const requested = amsterdamIso(date, time);
 		fetchTrips(home.code, walk.startStation, requested, controller.signal)
-			// NS also returns a few trains just before the requested time; only show ones after it.
-			.then(
-				(data) =>
-					(outbound = {
-						status: 'done',
-						data: data.filter((t) => new Date(t.departure) >= new Date(requested))
-					})
-			)
+			.then((data) => {
+				// NS also returns a few trains just before the requested time; only show ones after it.
+				const trips = data.filter((t) => new Date(t.departure) >= new Date(requested));
+				outIndex = pick(trips, wantOut, (c) => (missedOut = c));
+				wantOut = null;
+				outbound = { status: 'done', data: trips };
+			})
 			.catch((err) => {
 				if (!controller.signal.aborted) outbound = { status: 'error', message: err.message };
 			});
@@ -324,13 +345,12 @@
 		back = { status: 'loading' };
 		backIndex = 0;
 		fetchTrips(walk.endStation, home.code, end, controller.signal)
-			.then(
-				(data) =>
-					(back = {
-						status: 'done',
-						data: data.filter((t) => new Date(t.departure) >= new Date(end))
-					})
-			)
+			.then((data) => {
+				const trips = data.filter((t) => new Date(t.departure) >= new Date(end));
+				backIndex = pick(trips, wantBack, (c) => (missedBack = c));
+				wantBack = null;
+				back = { status: 'done', data: trips };
+			})
 			.catch((err) => {
 				if (!controller.signal.aborted) back = { status: 'error', message: err.message };
 			});
@@ -355,6 +375,18 @@
 	}
 
 	const homeArrival = $derived(back.status === 'done' ? back.data[backIndex]?.arrival : null);
+
+	// The plan as it stands, for the link: a train still loading keeps the one the link asked for.
+	$effect(() => {
+		const out = outbound.status === 'done' ? outbound.data[outIndex] : null;
+		const backTrain = back.status === 'done' ? back.data[backIndex] : null;
+		onplan?.({
+			date,
+			time,
+			out: out ? formatTime(out.departure) : wantOut,
+			back: backTrain ? formatTime(backTrain.departure) : wantBack
+		});
+	});
 
 	// The trains you picked, for the map; gone from it again when the walk closes.
 	$effect(() => {
@@ -679,10 +711,16 @@
 						{:else if outbound.status === 'done' && !outbound.data.length}
 							<p class="notice">Geen treinen gevonden rond dit tijdstip. Kies een andere tijd.</p>
 						{:else if outbound.status === 'done'}
+							{#if missedOut}<p class="notice">
+									De trein van {missedOut} staat er niet (meer) bij; dit is de eerstvolgende.
+								</p>{/if}
 							<TripOptions
 								trips={outbound.data}
 								selected={outIndex}
-								onselect={(i) => (outIndex = i)}
+								onselect={(i) => {
+									outIndex = i;
+									missedOut = null;
+								}}
 							/>
 						{/if}
 					</div>
@@ -768,10 +806,17 @@
 								Geen treinen meer na aankomst. Vertrek eerder of kies een andere dag.
 							</p>
 						{:else if back.status === 'done'}
+							{#if missedBack}<p class="notice">
+									De trein terug van {missedBack} staat er niet (meer) bij; dit is de eerstvolgende die
+									je haalt.
+								</p>{/if}
 							<TripOptions
 								trips={back.data}
 								selected={backIndex}
-								onselect={(i) => (backIndex = i)}
+								onselect={(i) => {
+									backIndex = i;
+									missedBack = null;
+								}}
 								onlater={later}
 								{loadingLater}
 							/>
