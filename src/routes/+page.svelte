@@ -11,8 +11,9 @@
 	import RoutePlanner from '#lib/components/RoutePlanner.svelte';
 	import RangeSlider from '#lib/components/RangeSlider.svelte';
 	import { stretchId } from '#lib/path.js';
-	import { dropTrains, readPlan, writePlan, type TripPlan } from '#lib/plan.js';
+	import { dayPath, dropTrains, readPlan, writePlan, type TripPlan } from '#lib/plan.js';
 	import { track } from '#lib/track.js';
+	import { HOME_KEY, readHome } from '#lib/trains.js';
 	import { amsterdamYmd, formatDuration, nextSaturdayMorning, travelBand } from '#lib/itinerary.js';
 	import {
 		COLLECTION_LABELS,
@@ -64,18 +65,7 @@
 	);
 
 	// --- Home station (remembered per browser) ------------------------------------------------------
-	const HOME_KEY = 'treinwandelaar.home';
-	let home = $state(readHome());
-
-	function readHome(): string {
-		try {
-			return (
-				(typeof localStorage !== 'undefined' && localStorage.getItem(HOME_KEY)) || data.defaultHome
-			);
-		} catch {
-			return data.defaultHome;
-		}
-	}
+	let home = $state(untrack(() => readHome(data.defaultHome)));
 
 	$effect(() => {
 		try {
@@ -554,7 +544,6 @@
 
 	/** Where you are while you follow yourself on the open walk (the map's location button). */
 	let here = $state.raw<Here | null>(null);
-	let walkMap: WalkMap | undefined = $state();
 	function onposition(h: Here | null) {
 		// That someone follows a walk, never where they are.
 		if (h && !here && selectedId) track('walk-follow', { id: selectedId });
@@ -710,7 +699,6 @@
 
 		<div class="map-area" bind:this={mapArea} style:--sheet-cover="{scrollY}px">
 			<WalkMap
-				bind:this={walkMap}
 				walks={mapWalks}
 				{path}
 				stations={data.stations}
@@ -761,7 +749,6 @@
 					onopen={(id) => select(id)}
 					{onsaved}
 					{here}
-					onfollow={() => walkMap?.follow() ?? false}
 					saved={savedTrips.filter((t) => t.walkId === selected.id)}
 					onsavetrip={(plan) => saveTrip(selected.id, plan)}
 					onforgettrip={(date) => forgetTrip(selected.id, date)}
@@ -797,6 +784,11 @@
 									><span class="when tabular">{dayLabel(t.date)} · {t.out ?? t.time}</span>
 									{t.walkName}</a
 								>
+								{#if t.date === today}<a
+										class="day"
+										href={dayPath(t.walkId, t, t.reversed)}
+										onclick={() => track('day-open', { id: t.walkId, from: 'trips' })}>Onderweg</a
+									>{/if}
 								<button
 									type="button"
 									class="forget"
@@ -1259,6 +1251,17 @@
 	.my-trips .walked {
 		padding: 0 10px;
 		color: var(--ink);
+	}
+
+	/* Today's day out: straight to the day page. */
+	.my-trips li > a.day {
+		flex: none;
+		padding: 0 10px;
+		border: 1px solid var(--path);
+		border-radius: 999px;
+		background: var(--path);
+		color: var(--on-accent);
+		text-decoration: none;
 	}
 
 	.my-trips .forget {

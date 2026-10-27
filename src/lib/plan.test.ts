@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dropTrains, isPlan, readPlan, writePlan } from './plan';
+import { dayPath, dropTrains, isPlan, readPlan, writePlan } from './plan';
 
 describe('trip plan in the link', () => {
 	it('round-trips through the query string', () => {
@@ -37,5 +37,15 @@ describe('a plan in a request body', () => {
 		expect(isPlan({ date: '31-10-2026', time: '09:15' })).toBe(false);
 		expect(isPlan({ date: '2026-10-31', time: '09:15', out: 'nu' })).toBe(false);
 		expect(isPlan(null)).toBe(false);
+	});
+});
+
+describe('the day page', () => {
+	it('takes the plan along, and which way round', () => {
+		const plan = { date: '2026-10-31', time: '09:15', out: '09:21', back: null };
+		expect(dayPath('osm:law4:UT-GD', plan, true)).toBe(
+			'/dag/osm:law4:UT-GD?date=2026-10-31&time=0915&out=0921&reverse=1'
+		);
+		expect(dayPath('w:1', null, false)).toBe('/dag/w:1');
 	});
 });

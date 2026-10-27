@@ -62,3 +62,12 @@ export function isPlan(value: unknown): value is TripPlan {
 		clockOrNull(p.back)
 	);
 }
+
+/** The day page: one walk on the plan's day, following yourself along it, with the trains home. */
+export function dayPath(walkId: string, plan: TripPlan | null, reversed: boolean): string {
+	const params = new URLSearchParams();
+	writePlan(params, plan);
+	if (reversed) params.set('reverse', '1');
+	const query = params.toString();
+	return `/dag/${encodeURIComponent(walkId).replaceAll('%3A', ':')}${query ? `?${query}` : ''}`;
+}

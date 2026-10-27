@@ -112,11 +112,16 @@ single-application forward-auth provider (paths are matched without the host), l
 ^/api/
 ^/robots\.txt$
 ^/route/
+^/dag/
 ^/sitemap\.xml$
 ^/favicon\.svg$
 ^/favicon\.png$
 ^/apple-touch-icon\.png$
 ```
+
+`/dag/<walk id>` is the day page you take along on the walk: just that walk, your location on it
+(an arrow the way you face, a warning when you leave the route or turn back), your pace so far and
+the trains home you'll still make. It's marked `noindex`: it's for walking, not for search results.
 
 Each walk a visitor may see also has a page of its own, `/route/<walk id>`, with its title, distance
 and stations as plain HTML for search engines, and `/route/` lists them all; `/sitemap.xml` names

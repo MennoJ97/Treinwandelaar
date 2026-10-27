@@ -4,8 +4,9 @@
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
 	import { locateOnLine } from '#lib/geo.js';
-	import type { TripPlan } from '#lib/plan.js';
+	import { dayPath, type TripPlan } from '#lib/plan.js';
 	import { track } from '#lib/track.js';
+	import { fetchTrips, PACE_KEY, readPace } from '#lib/trains.js';
 	import {
 		alongSentences,
 		endLabel,
@@ -15,6 +16,7 @@
 		WANDELNET_MELDPUNT
 	} from '#lib/walk.js';
 	import {
+		accessAt,
 		accessKm,
 		accessMinutes,
 		addMinutes,
@@ -26,12 +28,11 @@
 		minutesBetween,
 		walkMinutes,
 		breakMinutes,
-		DEFAULT_PACE
+		DEFAULT_PACE,
+		TRANSFER_MIN
 	} from '#lib/itinerary.js';
 	import {
-		AT_STATION_M,
 		COLLECTION_LABELS,
-		WALKABLE_STATION_M,
 		type Disruption,
 		type Feeders,
 		type Here,
@@ -76,8 +77,6 @@
 		onsaved: (walk: WalkDetail) => void;
 		/** Where you are, while you follow yourself on the map. */
 		here?: Here | null;
-		/** Start following you on the map; false when the browser won't give your location. */
-		onfollow?: () => boolean;
 		/** Your saved days out on this walk. */
 		saved?: SavedTrip[];
 		/** Save this plan as a day out on its date (again: the new plan replaces the old one). */
@@ -105,7 +104,6 @@
 		onopen,
 		onsaved,
 		here = null,
-		onfollow,
 		saved = [],
 		onsavetrip,
 		onforgettrip
@@ -170,7 +168,6 @@
 	let time = $state(initial.time);
 	$effect(() => ontrip?.({ date, time }));
 	// --- Your pace: walking speed and breaks, remembered in this browser ---------------------------
-	const PACE_KEY = 'treinwandelaar.pace';
 	let speedKmh = $state<number>(DEFAULT_PACE.speedKmh);
 	let breakMinPer10Km = $state<number>(DEFAULT_PACE.breakMinPer10Km);
 	// The server renders the defaults; the saved pace is applied once the page runs in the browser,
@@ -178,16 +175,12 @@
 	let paceLoaded = false;
 	$effect(() => {
 		const pace = { speedKmh, breakMinPer10Km };
+		if (!paceLoaded) {
+			paceLoaded = true;
+			({ speedKmh, breakMinPer10Km } = readPace());
+			return;
+		}
 		try {
-			if (!paceLoaded) {
-				paceLoaded = true;
-				const saved = JSON.parse(localStorage.getItem(PACE_KEY) ?? 'null');
-				if (typeof saved?.speedKmh === 'number' && typeof saved?.breakMinPer10Km === 'number') {
-					speedKmh = saved.speedKmh;
-					breakMinPer10Km = saved.breakMinPer10Km;
-				}
-				return;
-			}
 			localStorage.setItem(PACE_KEY, JSON.stringify(pace));
 		} catch {
 			/* no storage (private mode): fine, just not remembered */
@@ -202,54 +195,6 @@
 	const startsAtHome = $derived(walk.startStation === home.code);
 	const endsAtHome = $derived(walk.endStation === home.code);
 
-	/**
-	 * Trains from `from` to `to` around `dateTime`. Out walking the signal comes and goes: each answer
-	 * is kept in this browser, and when the server can't be reached the last one comes back instead,
-	 * with `savedAt` saying from when.
-	 */
-	async function fetchTrips(
-		from: string,
-		to: string,
-		dateTime: string,
-		signal?: AbortSignal
-	): Promise<{ trips: TripOption[]; savedAt: number | null }> {
-		const params = new URLSearchParams({ from, to, dateTime });
-		const key = params.toString();
-		let res: Response;
-		try {
-			res = await fetch(`/api/trips?${params}`, { signal });
-		} catch (err) {
-			const kept = signal?.aborted ? null : keptTrains(key);
-			if (kept) return { trips: kept.trips, savedAt: kept.at };
-			throw err;
-		}
-		if (!res.ok)
-			throw new Error((await res.json().catch(() => null))?.message ?? `HTTP ${res.status}`);
-		const trips = (await res.json()) as TripOption[];
-		keepTrains(key, trips);
-		return { trips, savedAt: null };
-	}
-
-	/** The last few train lists, newest first, by request. */
-	const TRAINS_KEY = 'treinwandelaar.trains';
-	const KEEP_TRAINS = 6;
-	type Kept = { key: string; at: number; trips: TripOption[] };
-	function readKept(): Kept[] {
-		try {
-			return JSON.parse(localStorage.getItem(TRAINS_KEY) ?? '[]');
-		} catch {
-			return [];
-		}
-	}
-	function keepTrains(key: string, trips: TripOption[]) {
-		const kept = [{ key, at: Date.now(), trips }, ...readKept().filter((k) => k.key !== key)];
-		try {
-			localStorage.setItem(TRAINS_KEY, JSON.stringify(kept.slice(0, KEEP_TRAINS)));
-		} catch {
-			/* no storage (private mode, or full): just not kept */
-		}
-	}
-	const keptTrains = (key: string) => readKept().find((k) => k.key === key) ?? null;
 	/** When the trains on screen were fetched, if they're kept ones because the server was out of reach. */
 	let outSavedAt = $state<number | null>(null);
 	let backSavedAt = $state<number | null>(null);
@@ -279,17 +224,8 @@
 	});
 
 	// --- Station to route and back: nothing, a walk, or a bus ---------------------------------------
-	type Access = 'station' | 'walk' | 'bus';
-	const accessAt = (metres: number | null): Access =>
-		metres == null || metres <= AT_STATION_M
-			? 'station'
-			: metres <= WALKABLE_STATION_M
-				? 'walk'
-				: 'bus';
 	const startAccess = $derived(accessAt(walk.startStationM));
 	const endAccess = $derived(accessAt(walk.endStationM));
-	/** Getting off a train and finding the bus, or the other way round. */
-	const TRANSFER_MIN = 5;
 
 	let feeders = $state<Load<Feeders>>({ status: 'idle' });
 	$effect(() => {
@@ -513,9 +449,8 @@
 		return { ...ride, spare };
 	});
 
-	/** You're walking today: offer to show where you are. */
+	/** You're walking today: the day page is where you'll want to be. */
 	const walkingToday = $derived(date === amsterdamYmd());
-	let noLocation = $state(false);
 
 	// --- Personal layer -----------------------------------------------------------------------------
 	async function save(update: {
@@ -648,15 +583,15 @@
 					(je locatie is onnauwkeurig, ± {Math.round(here.accuracyM)} m)</span
 				>{/if}
 		</p>
-	{:else if walkingToday && onfollow}
-		<button type="button" class="follow" onclick={() => (noLocation = !onfollow())}
-			>Volg mijn locatie op de kaart</button
-		>
-		{#if noLocation}<p class="muted">
-				Je browser geeft je locatie niet door. Geef deze site toestemming in de instellingen van je
-				browser of telefoon.
-			</p>{/if}
 	{/if}
+	<!-- Just this walk and its trains, to take along: where you are on it, and what you'll catch. -->
+	<a
+		class="follow"
+		class:today={walkingToday}
+		href={dayPath(walk.id, current, reversed)}
+		onclick={() => track('day-open', { id: walk.id, from: 'walk' })}
+		>{walkingToday ? 'Onderweg: volg je route' : 'Onderweg-scherm'} →</a
+	>
 
 	{#if walk.photos.length}
 		<div class="photos" aria-label="Foto's">
@@ -1103,14 +1038,22 @@
 	}
 
 	.follow {
+		display: inline-block;
 		margin: 12px 0 0;
 		padding: 5px 12px;
 		border: 1px solid var(--line);
 		border-radius: 999px;
 		background: var(--surface);
 		color: var(--ink);
-		cursor: pointer;
 		font-size: var(--step--1);
+		text-decoration: none;
+	}
+
+	.follow.today {
+		border-color: var(--path);
+		background: var(--path);
+		color: var(--on-accent);
+		font-weight: 600;
 	}
 
 	h3 {
