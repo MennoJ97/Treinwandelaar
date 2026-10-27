@@ -1,3 +1,5 @@
+import { AT_STATION_M, WALKABLE_STATION_M } from './types.js';
+
 export interface WalkPace {
 	/** Walking speed on flat Dutch terrain, km/h. */
 	speedKmh: number;
@@ -35,6 +37,18 @@ export const accessKm = (metres: number) => (metres * DETOUR) / 1000;
 export function accessMinutes(metres: number, speedKmh = DEFAULT_PACE.speedKmh): number {
 	return Math.ceil((accessKm(metres) / speedKmh) * 60);
 }
+
+/** Between a station and a route end: nothing (it's at the station), a walk, or a bus. */
+export type Access = 'station' | 'walk' | 'bus';
+export const accessAt = (metres: number | null): Access =>
+	metres == null || metres <= AT_STATION_M
+		? 'station'
+		: metres <= WALKABLE_STATION_M
+			? 'walk'
+			: 'bus';
+
+/** Getting off a train and finding the bus, or the other way round. */
+export const TRANSFER_MIN = 5;
 
 export function addMinutes(iso: string, minutes: number): string {
 	return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();

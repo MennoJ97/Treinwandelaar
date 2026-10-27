@@ -18,6 +18,7 @@
 		type WalkSummary
 	} from '#lib/types.js';
 	import { nearest } from '#lib/geo.js';
+	import { cssVar, styleUrl } from '#lib/mapStyle.js';
 	import { travelBand } from '#lib/itinerary.js';
 	import { endLabel, startLabel } from '#lib/walk.js';
 	// MapLibre 6 looks for its worker next to its own module. In a production build that module is
@@ -156,16 +157,6 @@
 		m.setPaintProperty('walk-ends', 'circle-stroke-color', color);
 		m.setPaintProperty('routes-line', 'line-color', focused ? faint : cssVar('--path'));
 		m.setPaintProperty('routes-line', 'line-opacity', focused ? 1 : ROUTES_OPACITY);
-	}
-
-	function cssVar(name: string) {
-		return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-	}
-
-	/** OpenFreeMap style matching the page theme (--map-style is set per theme in +layout). */
-	function styleUrl() {
-		const style = cssVar('--map-style').replace(/['"]/g, '') || 'positron';
-		return `https://tiles.openfreemap.org/styles/${style}`;
 	}
 
 	const walkFeatures = $derived({
@@ -818,17 +809,6 @@
 			if (e.code === GeolocationPositionError.PERMISSION_DENIED) report(null);
 		});
 		return control;
-	}
-
-	/**
-	 * Start following you, as a press on the map's location button would (the walk's own button).
-	 * False when the browser won't tell where you are: no location, or you said no to the site.
-	 */
-	export function follow(): boolean {
-		const button = container?.querySelector<HTMLButtonElement>('.maplibregl-ctrl-geolocate');
-		if (!following || !button || button.disabled) return false;
-		if (button.getAttribute('aria-pressed') !== 'true') geolocate?.trigger();
-		return true;
 	}
 
 	/** A route picked to plan on: show all of it, unless a walk is open (that frames itself). */

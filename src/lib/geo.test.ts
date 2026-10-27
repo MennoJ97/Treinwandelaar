@@ -62,4 +62,29 @@ describe('geo', () => {
 		expect(locateOnLine(atStart, loop).alongM).toBeLessThan(100);
 		expect(locateOnLine(atStart, loop, lengthM - 200).alongM).toBeGreaterThan(lengthM - 100);
 	});
+
+	it('says how far off the line you are, whichever stretch it follows on from', () => {
+		// Out east, 20 m north, back west: two stretches side by side.
+		const there: LngLat[] = [
+			[5, 52],
+			[5.01, 52],
+			[5.01, 52.00018],
+			[5, 52.00018]
+		];
+		const back = locateOnLine([5.002, 52], there, 1300);
+		expect(back.alongM).toBeGreaterThan(1200); // the way back, where the last fix was
+		expect(back.offM).toBeLessThan(1); // but you're right on the way out
+	});
+
+	it("lets go of a stretch close by once you're clearly on another", () => {
+		// Out east, 60 m north, back west: the way back runs a street over from the way out.
+		const there: LngLat[] = [
+			[5, 52],
+			[5.01, 52],
+			[5.01, 52.00055],
+			[5, 52.00055]
+		];
+		// The last fix was put on the way back; this one is right on the way out.
+		expect(locateOnLine([5.002, 52], there, 1300).alongM).toBeLessThan(200);
+	});
 });

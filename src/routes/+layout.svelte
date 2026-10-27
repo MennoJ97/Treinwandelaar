@@ -66,7 +66,7 @@
 	@media (prefers-color-scheme: dark) {
 		:global(:root:not([data-theme='light'])) {
 			--rail: #7fa0ee;
-			--path: #5dbb84;
+			--path: #7fa98c;
 			--warn: #ee9a5c;
 			/* Flipped for the dark map: near is brightest, far sinks toward the background. */
 			--band-near: #b7d3f6;
@@ -85,7 +85,7 @@
 
 	:global(:root[data-theme='dark']) {
 		--rail: #7fa0ee;
-		--path: #5dbb84;
+		--path: #7fa98c;
 		--warn: #ee9a5c;
 		/* Flipped for the dark map: near is brightest, far sinks toward the background. */
 		--band-near: #b7d3f6;
