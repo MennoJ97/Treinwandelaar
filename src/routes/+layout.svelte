@@ -29,6 +29,8 @@
 		--line: var(--rule);
 		/* NS yellow, as NS uses it: a fill (logo tile, home station, your rating), never text. */
 		--signal: var(--treinwandelaar, #ffc917);
+		/* On the yellow (the day's route, its buttons): dark in both themes, as the yellow stays. */
+		--on-signal: #111111;
 
 		--rail: #1f3a93;
 		--path: #2e7a4c;
@@ -99,6 +101,11 @@
 		--map-casing: #1e1e1e;
 		--map-faded: #333331;
 		--map-style: 'dark';
+	}
+
+	/* Ticked boxes in the theme's yellow; the browser picks a tick that shows on it. */
+	:global(input[type='checkbox']) {
+		accent-color: var(--signal);
 	}
 
 	/* MapLibre's own controls are white boxes with black glyphs; follow the theme instead. */

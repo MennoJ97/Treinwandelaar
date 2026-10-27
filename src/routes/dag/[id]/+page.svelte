@@ -768,8 +768,8 @@
 		padding: 10px 14px;
 		border: 0;
 		border-radius: var(--radius);
-		background: var(--path);
-		color: var(--on-accent);
+		background: var(--signal);
+		color: var(--on-signal);
 		font: inherit;
 		font-weight: 700;
 		cursor: pointer;
@@ -876,9 +876,9 @@
 	}
 
 	.stops button[aria-checked='true'] {
-		border-color: var(--rail);
-		background: var(--rail);
-		color: var(--on-accent);
+		border-color: var(--signal);
+		background: var(--signal);
+		color: var(--on-signal);
 	}
 
 	.stops button[aria-checked='true'] .muted {

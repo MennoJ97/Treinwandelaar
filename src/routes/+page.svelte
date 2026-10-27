@@ -1257,10 +1257,10 @@
 	.my-trips li > a.day {
 		flex: none;
 		padding: 0 10px;
-		border: 1px solid var(--path);
+		border: 1px solid var(--signal);
 		border-radius: 999px;
-		background: var(--path);
-		color: var(--on-accent);
+		background: var(--signal);
+		color: var(--on-signal);
 		text-decoration: none;
 	}
 
@@ -1322,7 +1322,7 @@
 		width: 100%;
 		min-width: 0;
 		margin: 0;
-		accent-color: var(--rail);
+		accent-color: var(--signal);
 	}
 
 	.filters-toggle {
@@ -1412,9 +1412,9 @@
 	}
 
 	.kinds button[aria-pressed='true'] {
-		border-color: var(--ink);
-		background: var(--ink);
-		color: var(--on-accent);
+		border-color: var(--signal);
+		background: var(--signal);
+		color: var(--on-signal);
 	}
 
 	.kinds button span {

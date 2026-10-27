@@ -151,13 +151,13 @@
 		};
 	});
 
-	/** A chevron for the walking direction along the line, in the colour on the route's green. */
+	/** A chevron for the walking direction along the line, dark on the route's yellow. */
 	function chevron() {
 		const size = 40;
 		const canvas = document.createElement('canvas');
 		canvas.width = canvas.height = size;
 		const c = canvas.getContext('2d')!;
-		c.strokeStyle = cssVar('--on-accent');
+		c.strokeStyle = cssVar('--on-signal');
 		c.lineWidth = 6;
 		c.lineCap = 'round';
 		c.lineJoin = 'round';
@@ -209,7 +209,8 @@
 				'text-halo-width': 1.5
 			}
 		});
-		// Behind you: a trace. Ahead: the route's green, with chevrons the way you walk it.
+		// Behind you: a trace. Ahead: NS yellow outlined dark, as the walk you point at on the home
+		// page, with chevrons the way you walk it.
 		m.addLayer({
 			id: 'walk-done',
 			type: 'line',
@@ -229,7 +230,7 @@
 			filter: ['==', ['get', 'part'], 'ahead'],
 			layout: { 'line-cap': 'round', 'line-join': 'round' },
 			paint: {
-				'line-color': cssVar('--map-casing'),
+				'line-color': cssVar('--on-signal'),
 				'line-width': ['interpolate', ['linear'], ['zoom'], 10, 7, 16, 13]
 			}
 		});
@@ -240,7 +241,7 @@
 			filter: ['==', ['get', 'part'], 'ahead'],
 			layout: { 'line-cap': 'round', 'line-join': 'round' },
 			paint: {
-				'line-color': cssVar('--path'),
+				'line-color': cssVar('--signal'),
 				'line-width': ['interpolate', ['linear'], ['zoom'], 10, 4, 16, 9]
 			}
 		});

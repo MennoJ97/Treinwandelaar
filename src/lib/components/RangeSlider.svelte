@@ -84,7 +84,7 @@
 		background: linear-gradient(
 			to right,
 			var(--line) var(--lo),
-			var(--rail) var(--lo) var(--hi),
+			var(--signal) var(--lo) var(--hi),
 			var(--line) var(--hi)
 		);
 	}
@@ -115,9 +115,9 @@
 	input::-webkit-slider-thumb {
 		width: var(--thumb);
 		height: var(--thumb);
-		border: 2px solid var(--surface);
+		border: 2px solid var(--on-signal);
 		border-radius: 50%;
-		background: var(--rail);
+		background: var(--signal);
 		cursor: pointer;
 		pointer-events: auto;
 		-webkit-appearance: none;
@@ -126,9 +126,9 @@
 		width: var(--thumb);
 		height: var(--thumb);
 		box-sizing: border-box;
-		border: 2px solid var(--surface);
+		border: 2px solid var(--on-signal);
 		border-radius: 50%;
-		background: var(--rail);
+		background: var(--signal);
 		cursor: pointer;
 		pointer-events: auto;
 	}

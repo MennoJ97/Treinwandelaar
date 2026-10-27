@@ -1010,9 +1010,9 @@
 	}
 
 	.reverse[aria-pressed='true'] {
-		border-color: var(--path);
-		background: var(--path);
-		color: var(--on-accent);
+		border-color: var(--signal);
+		background: var(--signal);
+		color: var(--on-signal);
 	}
 
 	.route .kind {
@@ -1024,7 +1024,7 @@
 	.onroute {
 		margin: 12px 0 0;
 		padding: 8px 10px;
-		border-left: 3px solid var(--path);
+		border-left: 3px solid var(--signal);
 		background: var(--notice-bg);
 	}
 
@@ -1050,9 +1050,9 @@
 	}
 
 	.follow.today {
-		border-color: var(--path);
-		background: var(--path);
-		color: var(--on-accent);
+		border-color: var(--signal);
+		background: var(--signal);
+		color: var(--on-signal);
 		font-weight: 600;
 	}
 
@@ -1146,9 +1146,9 @@
 	}
 
 	.save-trip[aria-pressed='true'] {
-		border-color: var(--path);
-		background: var(--path);
-		color: var(--on-accent);
+		border-color: var(--signal);
+		background: var(--signal);
+		color: var(--on-signal);
 	}
 
 	.when label {
@@ -1270,7 +1270,7 @@
 	.pace input {
 		width: 100%;
 		margin: 0;
-		accent-color: var(--path);
+		accent-color: var(--signal);
 	}
 
 	.muted {
@@ -1413,9 +1413,9 @@
 	}
 
 	.status button[aria-pressed='true'] {
-		border-color: var(--path);
-		background: var(--path);
-		color: var(--on-accent);
+		border-color: var(--signal);
+		background: var(--signal);
+		color: var(--on-signal);
 	}
 
 	.stars {
