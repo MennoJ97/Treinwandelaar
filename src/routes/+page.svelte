@@ -17,6 +17,7 @@
 		COLLECTION_LABELS,
 		type Collection,
 		type Disruption,
+		type Here,
 		type PathDetail,
 		type Reachability,
 		type ReachabilityResponse,
@@ -461,6 +462,15 @@
 		trip = { ...t, day };
 	}
 
+	/** Where you are while you follow yourself on the open walk (the map's location button). */
+	let here = $state.raw<Here | null>(null);
+	let walkMap: WalkMap | undefined = $state();
+	function onposition(h: Here | null) {
+		// That someone follows a walk, never where they are.
+		if (h && !here && selectedId) track('walk-follow', { id: selectedId });
+		here = h;
+	}
+
 	/** The open walk's chosen trains out and back, drawn faintly under it on the map. */
 	let tripLegs = $state.raw<TripLeg[][]>([]);
 	/** And its chosen buses between station and route, where they run (empty: unknown). */
@@ -608,6 +618,7 @@
 
 		<div class="map-area" bind:this={mapArea} style:--sheet-cover="{scrollY}px">
 			<WalkMap
+				bind:this={walkMap}
 				walks={mapWalks}
 				{path}
 				stations={data.stations}
@@ -622,6 +633,7 @@
 				routeKinds={showRoutes && !routeId ? shown : []}
 				onroute={pickRoute}
 				onlocate={(code) => (home = code)}
+				{onposition}
 				obscured={mapCovered}
 			/>
 			<MapLegend
@@ -654,6 +666,8 @@
 					onreverse={reverse}
 					onopen={(id) => select(id)}
 					{onsaved}
+					{here}
+					onfollow={() => walkMap?.follow()}
 				/>
 			{/key}
 		{:else}

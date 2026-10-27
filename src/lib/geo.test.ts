@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { haversine, lineLengthKm, nearest, simplify, type LngLat } from './geo';
+import { haversine, lineLengthKm, locateOnLine, nearest, simplify, type LngLat } from './geo';
 
 const utrecht: LngLat = [5.1098, 52.0894];
 const amsterdam: LngLat = [4.9006, 52.3789];
@@ -35,5 +35,31 @@ describe('geo', () => {
 			[5.01, 52.005]
 		];
 		expect(simplify(corner, 10)).toEqual([corner[0], corner[2], corner[3]]);
+	});
+
+	it('finds how far along a route a point lies, and how far off it', () => {
+		// About 1.37 km due east along 52° N, in two pieces.
+		const line: LngLat[] = [
+			[5, 52],
+			[5.01, 52],
+			[5.02, 52]
+		];
+		const spot = locateOnLine([5.015, 52.0009], line);
+		expect(spot.alongM / spot.lengthM).toBeCloseTo(0.75, 2);
+		expect(spot.offM).toBeCloseTo(100, -1);
+	});
+
+	it('keeps to the stretch you were on where a route passes the same spot twice', () => {
+		// A loop: out east, a bend north, and back to the start.
+		const loop: LngLat[] = [
+			[5, 52],
+			[5.02, 52],
+			[5.02, 52.01],
+			[5, 52.0002]
+		];
+		const atStart: LngLat = [5.0005, 52.0001];
+		const { lengthM } = locateOnLine(atStart, loop);
+		expect(locateOnLine(atStart, loop).alongM).toBeLessThan(100);
+		expect(locateOnLine(atStart, loop, lengthM - 200).alongM).toBeGreaterThan(lengthM - 100);
 	});
 });

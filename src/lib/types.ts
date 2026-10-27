@@ -165,6 +165,16 @@ export interface TripLeg {
 	line: [number, number][];
 }
 
+/** Where you are, from the phone's location while you follow yourself on an open walk. */
+export interface Here {
+	lng: number;
+	lat: number;
+	/** Metres either way the phone is unsure about. */
+	accuracyM: number;
+	/** When the phone took the fix, ms since 1970. */
+	time: number;
+}
+
 export interface TripOption {
 	departure: string;
 	arrival: string;

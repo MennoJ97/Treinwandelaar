@@ -3,6 +3,7 @@
 	import FeederLeg from './FeederLeg.svelte';
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
+	import { locateOnLine } from '#lib/geo.js';
 	import { track } from '#lib/track.js';
 	import {
 		alongSentences,
@@ -21,6 +22,7 @@
 		amsterdamYmd,
 		formatDuration,
 		formatTime,
+		minutesBetween,
 		walkMinutes,
 		breakMinutes,
 		DEFAULT_PACE
@@ -31,6 +33,7 @@
 		WALKABLE_STATION_M,
 		type Disruption,
 		type Feeders,
+		type Here,
 		type Station,
 		type TripLeg,
 		type TripOption,
@@ -65,6 +68,10 @@
 		onopen?: (id: string) => void;
 		/** After a save, with the walk as the server now has it. */
 		onsaved: (walk: WalkDetail) => void;
+		/** Where you are, while you follow yourself on the map. */
+		here?: Here | null;
+		/** Start following you on the map. */
+		onfollow?: () => void;
 	}
 
 	let {
@@ -82,7 +89,9 @@
 		reversed = false,
 		onreverse,
 		onopen,
-		onsaved
+		onsaved,
+		here = null,
+		onfollow
 	}: Props = $props();
 
 	/** What it passes (OSM's walks), as on the walk's own page. */
@@ -363,6 +372,47 @@
 		return () => onrides?.({ start: [], end: [] });
 	});
 
+	// --- Out walking: where you are on the route ----------------------------------------------------
+	/** Further off the line than this and you're not on the route (yet, or any more). */
+	const ON_ROUTE_M = 250;
+	/** Where the last fix put you along the line, so the next one follows on from it. */
+	let lastAlongM = 0;
+	type OnRoute = { offKm: number } | { toGoKm: number; minutes: number };
+	const onRoute = $derived.by((): OnRoute | null => {
+		if (!here) return null;
+		const spot = locateOnLine([here.lng, here.lat], walk.geometry, lastAlongM);
+		if (spot.offM > ON_ROUTE_M) return { offKm: spot.offM / 1000 };
+		lastAlongM = spot.alongM;
+		// In the walk's own kilometres, which can differ a little from its line's.
+		const toGoKm = spot.lengthM ? walk.distanceKm * (1 - spot.alongM / spot.lengthM) : 0;
+		return { toGoKm, minutes: walkMinutes(toGoKm, { speedKmh, breakMinPer10Km }) };
+	});
+
+	/** The bus or train you picked after the walk, and whether you'll make it from here. */
+	const catching = $derived.by(() => {
+		if (!here || !onRoute || !('toGoKm' in onRoute)) return null;
+		let ready = onRoute.minutes;
+		let ride: { what: string; departure: string } | null = null;
+		if (endAccess === 'bus' && endRide) {
+			ready += accessMinutes(endRide.stopM, speedKmh);
+			ride = { what: 'de bus', departure: endRide.departure };
+		} else if (endAccess !== 'bus' && back.status === 'done' && back.data[backIndex]) {
+			if (endAccess === 'walk') ready += accessMinutes(walk.endStationM!, speedKmh);
+			ride = { what: 'de trein', departure: back.data[backIndex].departure };
+		}
+		// Only a ride still to come today: an old plan or another day's says nothing about now.
+		if (!ride || new Date(ride.departure).getTime() < here.time) return null;
+		if (amsterdamYmd(new Date(ride.departure)) !== amsterdamYmd(new Date(here.time))) return null;
+		const spare = minutesBetween(
+			new Date(here.time + ready * 60_000).toISOString(),
+			ride.departure
+		);
+		return { ...ride, spare };
+	});
+
+	/** You're walking today: offer to show where you are. */
+	const walkingToday = $derived(date === amsterdamYmd());
+
 	// --- Personal layer -----------------------------------------------------------------------------
 	async function save(update: {
 		status?: 'wishlist' | 'done' | null;
@@ -464,6 +514,39 @@
 			{/if}
 		</div>
 	</header>
+
+	{#if here}
+		<p class="onroute" role="status">
+			{#if onRoute && 'offKm' in onRoute}
+				Je bent ± {km(onRoute.offKm)} km van de route.
+			{:else if onRoute}
+				<strong>Nog {km(onRoute.toGoKm)} km</strong>, ± {formatDuration(onRoute.minutes)} tot {endAccess ===
+				'station'
+					? (walk.endStationName ?? walk.endPlace)
+					: routeEndName('end').toLowerCase()}.
+				{#if catching}
+					{@const at = formatTime(catching.departure)}
+					{#if catching.spare >= 15}
+						Je haalt {catching.what} van {at} ruim, met ± {formatDuration(catching.spare)} over.
+					{:else if catching.spare >= 0}
+						<span class="tight"
+							>Krap: {catching.what} van {at} haal je met ± {catching.spare} min over.</span
+						>
+					{:else}
+						<span class="late"
+							>{catching.what[0].toUpperCase() + catching.what.slice(1)} van {at} haal je waarschijnlijk
+							niet; kies een latere.</span
+						>
+					{/if}
+				{/if}
+			{/if}
+			{#if here.accuracyM > 100}<span class="muted">
+					(je locatie is onnauwkeurig, ± {Math.round(here.accuracyM)} m)</span
+				>{/if}
+		</p>
+	{:else if walkingToday && onfollow}
+		<button type="button" class="follow" onclick={onfollow}>Volg mijn locatie op de kaart</button>
+	{/if}
 
 	{#if walk.photos.length}
 		<div class="photos" aria-label="Foto's">
@@ -850,6 +933,34 @@
 	.route .kind {
 		color: var(--ink);
 		font-weight: 600;
+	}
+
+	/* Out walking: the one line you look at, so it sits right under the walk's name. */
+	.onroute {
+		margin: 12px 0 0;
+		padding: 8px 10px;
+		border-left: 3px solid var(--path);
+		background: var(--notice-bg);
+	}
+
+	.onroute .tight {
+		font-weight: 600;
+	}
+
+	.onroute .late {
+		color: var(--warn);
+		font-weight: 600;
+	}
+
+	.follow {
+		margin: 12px 0 0;
+		padding: 5px 12px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--ink);
+		cursor: pointer;
+		font-size: var(--step--1);
 	}
 
 	h3 {

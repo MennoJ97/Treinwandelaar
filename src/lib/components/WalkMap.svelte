@@ -4,11 +4,13 @@
 		ExpressionSpecification,
 		FilterSpecification,
 		GeoJSONSource,
+		GeolocateControl,
 		Map as MlMap
 	} from 'maplibre-gl';
 	import {
 		WALKABLE_STATION_M,
 		type Collection,
+		type Here,
 		type PathDetail,
 		type Reachability,
 		type Station,
@@ -45,6 +47,11 @@
 		onroute?: (id: string) => void;
 		/** You asked the map where you are: here's the station closest to you. */
 		onlocate: (code: string) => void;
+		/**
+		 * Where you are while you follow yourself on the open walk, at every new fix; null once you
+		 * stop. Only while a walk is open: then the button follows you instead of picking a station.
+		 */
+		onposition?: (here: Here | null) => void;
 		/** How many pixels at the map's bottom are behind something, like the list on small screens. */
 		obscured?: () => number;
 	}
@@ -64,6 +71,7 @@
 		routeKinds = [],
 		onroute = () => {},
 		onlocate,
+		onposition = () => {},
 		obscured = () => 0
 	}: Props = $props();
 
@@ -80,6 +88,7 @@
 	};
 
 	let container: HTMLDivElement;
+	let maplibre: typeof import('maplibre-gl') | undefined;
 	let map: MlMap | undefined = $state();
 	let ready = $state(false);
 
@@ -628,23 +637,9 @@
 			// The compass sits under the zoom buttons; it turns with the map and a click puts north
 			// back up (and the map flat again, after a two-finger tilt).
 			m.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-			const geolocate = new maplibregl.GeolocateControl({});
-			m.addControl(geolocate, 'top-right');
-			geolocate.on('geolocate', ({ coords }) => {
-				const here: [number, number] = [coords.longitude, coords.latitude];
-				const closest = nearest(here, stations, LOCATE_MAX_METRES);
-				if (!closest) return; // the control has already flown to you; nothing to pick
-				onlocate(closest.item.code);
-				// Frame you and the station together, in place of the control's own fly-to-you.
-				const station: [number, number] = [closest.item.lng, closest.item.lat];
-				m.fitBounds(
-					[
-						[Math.min(here[0], station[0]), Math.min(here[1], station[1])],
-						[Math.max(here[0], station[0]), Math.max(here[1], station[1])]
-					],
-					{ padding: panelPadding(56, true), maxZoom: 13, duration: 800 }
-				);
-			});
+			// The location button under it comes from the effect below: what it does depends on
+			// whether a walk is open.
+			maplibre = maplibregl;
 			m.on('load', () => {
 				addOverlay(m);
 				// Layer-bound listeners belong to the map, so they survive a style swap.
@@ -696,6 +691,92 @@
 		(map.getSource('path') as GeoJSONSource | undefined)?.setData(data[3]);
 		(map.getSource('transit') as GeoJSONSource | undefined)?.setData(data[4]);
 	});
+
+	// --- Where you are -------------------------------------------------------------------------------
+	/**
+	 * With no walk open the button finds you once and makes the station nearest to you home. With a
+	 * walk open it keeps following you as a dot on the map, and leaves home alone: you're out
+	 * walking. MapLibre can't switch a control between the two, so each change swaps in a new one.
+	 */
+	let geolocate: GeolocateControl | undefined;
+	const following = $derived(selectedId !== null);
+
+	$effect(() => {
+		const follow = following;
+		if (!map || !maplibre) return;
+		const m = map;
+		untrack(() => {
+			if (geolocate) {
+				m.removeControl(geolocate);
+				onposition(null);
+			}
+			// The button gets its label once MapLibre has checked, a moment later, that the browser
+			// can locate at all, from the map's locale table: there's no option per control.
+			m._locale['GeolocateControl.FindMyLocation'] = follow
+				? FOLLOW_LABEL
+				: LOCALE['GeolocateControl.FindMyLocation'];
+			geolocate = follow ? followControl(maplibre!) : stationControl(maplibre!, m);
+			m.addControl(geolocate, 'top-right');
+		});
+	});
+
+	const FOLLOW_LABEL = 'Volg mijn locatie op de route';
+
+	function stationControl(ml: typeof import('maplibre-gl'), m: MlMap) {
+		const control = new ml.GeolocateControl({});
+		control.on('geolocate', ({ coords }) => {
+			const here: [number, number] = [coords.longitude, coords.latitude];
+			const closest = nearest(here, stations, LOCATE_MAX_METRES);
+			if (!closest) return; // the control has already flown to you; nothing to pick
+			onlocate(closest.item.code);
+			// Frame you and the station together, in place of the control's own fly-to-you.
+			const station: [number, number] = [closest.item.lng, closest.item.lat];
+			m.fitBounds(
+				[
+					[Math.min(here[0], station[0]), Math.min(here[1], station[1])],
+					[Math.max(here[0], station[0]), Math.max(here[1], station[1])]
+				],
+				{ padding: panelPadding(56, true), maxZoom: 13, duration: 800 }
+			);
+		});
+		return control;
+	}
+
+	function followControl(ml: typeof import('maplibre-gl')) {
+		const control = new ml.GeolocateControl({
+			trackUserLocation: true,
+			positionOptions: { enableHighAccuracy: true },
+			fitBoundsOptions: { padding: panelPadding(40), maxZoom: 16 }
+		});
+		control.on('geolocate', ({ coords, timestamp }) =>
+			onposition({
+				lng: coords.longitude,
+				lat: coords.latitude,
+				accuracyM: coords.accuracy,
+				time: timestamp
+			})
+		);
+		// Panning the map away from you ends the follow too, but keeps the dot and its fixes: only a
+		// button that's no longer pressed means you've stopped. MapLibre unpresses it right after.
+		control.on('trackuserlocationend', () =>
+			queueMicrotask(() => {
+				if (container.querySelector('.maplibregl-ctrl-geolocate[aria-pressed="false"]'))
+					onposition(null);
+			})
+		);
+		control.on('error', (e) => {
+			if (e.code === GeolocationPositionError.PERMISSION_DENIED) onposition(null);
+		});
+		return control;
+	}
+
+	/** Start following you, as a press on the map's location button would (the walk's own button). */
+	export function follow() {
+		const button = container?.querySelector<HTMLButtonElement>(
+			'.maplibregl-ctrl-geolocate[aria-pressed="false"]'
+		);
+		if (following && button) geolocate?.trigger();
+	}
 
 	/** A route picked to plan on: show all of it, unless a walk is open (that frames itself). */
 	$effect(() => {
