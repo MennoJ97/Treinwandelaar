@@ -50,6 +50,8 @@
 		--notice-bg: #fbf1ea;
 		--shadow: rgb(0 0 0 / 0.12);
 		--map-casing: #ffffff;
+		/* The other walks while you follow yourself on one: a trace, a shade off the basemap. */
+		--map-faded: #d2d2ce;
 		--map-style: 'positron';
 
 		--step--1: 0.8125rem;
@@ -76,6 +78,7 @@
 			--notice-bg: #2a221c;
 			--shadow: rgb(0 0 0 / 0.5);
 			--map-casing: #1e1e1e;
+			--map-faded: #333331;
 			--map-style: 'dark';
 		}
 	}
@@ -94,6 +97,7 @@
 		--notice-bg: #2a221c;
 		--shadow: rgb(0 0 0 / 0.5);
 		--map-casing: #1e1e1e;
+		--map-faded: #333331;
 		--map-style: 'dark';
 	}
 

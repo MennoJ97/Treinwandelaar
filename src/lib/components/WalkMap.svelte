@@ -121,22 +121,41 @@
 		12,
 		0.7
 	];
-	/** How much of the other walks and routes still shows while you follow yourself on one. */
-	const FADED = 0.15;
+	/** A walk's colour: how far it is from home by train. */
+	function bandColors() {
+		return [
+			'match',
+			['get', 'band'],
+			'near',
+			cssVar('--band-near'),
+			'medium',
+			cssVar('--band-medium'),
+			'far',
+			cssVar('--band-far'),
+			'veryfar',
+			cssVar('--band-veryfar'),
+			cssVar('--band-unknown')
+		] as unknown as string;
+	}
 
 	/**
 	 * Out walking, the other walks and the whole routes fade to a trace: still there to see where
 	 * you could go, but yours is the one that stands out. Back to normal once you stop following.
+	 * Faded by colour, not transparency: one solid faint line, without its casing, stays as faint
+	 * where walks overlap, where see-through lines would add up.
 	 */
 	function applyFocus(m: MlMap) {
 		if (!m.getLayer('walks-line')) return;
 		const mine = ['==', ['get', 'id'], selectedId ?? ''] as ExpressionSpecification;
-		const walks = (focused ? ['case', mine, 1, FADED] : 1) as ExpressionSpecification | number;
-		m.setPaintProperty('walks-casing', 'line-opacity', walks);
-		m.setPaintProperty('walks-line', 'line-opacity', walks);
-		m.setPaintProperty('walk-ends', 'circle-opacity', walks);
-		m.setPaintProperty('walk-ends', 'circle-stroke-opacity', walks);
-		m.setPaintProperty('routes-line', 'line-opacity', focused ? FADED / 2 : ROUTES_OPACITY);
+		const faint = cssVar('--map-faded');
+		const color = focused
+			? (['case', mine, bandColors(), faint] as unknown as string)
+			: bandColors();
+		m.setPaintProperty('walks-casing', 'line-opacity', focused ? ['case', mine, 1, 0] : 1);
+		m.setPaintProperty('walks-line', 'line-color', color);
+		m.setPaintProperty('walk-ends', 'circle-stroke-color', color);
+		m.setPaintProperty('routes-line', 'line-color', focused ? faint : cssVar('--path'));
+		m.setPaintProperty('routes-line', 'line-opacity', focused ? 1 : ROUTES_OPACITY);
 	}
 
 	function cssVar(name: string) {
@@ -291,19 +310,7 @@
 		// Every whole route: a few hundred KB, fetched only once you ask to see them.
 		m.addSource('routes', { type: 'geojson', data: routesWanted ? '/api/paths' : EMPTY });
 
-		const bandColor = [
-			'match',
-			['get', 'band'],
-			'near',
-			cssVar('--band-near'),
-			'medium',
-			cssVar('--band-medium'),
-			'far',
-			cssVar('--band-far'),
-			'veryfar',
-			cssVar('--band-veryfar'),
-			cssVar('--band-unknown')
-		] as unknown as string;
+		const bandColor = bandColors();
 		// Near walks on top: where routes overlap, the ones you'd pick shouldn't be buried.
 		const bandSortKey: ExpressionSpecification = [
 			'match',
