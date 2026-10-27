@@ -22,6 +22,7 @@
 		type PathDetail,
 		type Reachability,
 		type ReachabilityResponse,
+		type SavedTrip,
 		type TripLeg,
 		type WalkDetail as WalkDetailData,
 		type WalkSummary
@@ -484,6 +485,73 @@
 		}, 400);
 	}
 
+	// --- Saved days out ("Mijn reizen") -----------------------------------------------------------------
+	let savedTrips = $state.raw<SavedTrip[]>(untrack(() => data.savedTrips));
+	const upcomingTrips = $derived(savedTrips.filter((t) => t.date >= today));
+	/** Days gone by that you haven't said anything about yet: walked, or not after all. */
+	const pastTrips = $derived(savedTrips.filter((t) => t.date < today));
+
+	async function changeTrips(req: Promise<Response>) {
+		const res = await req;
+		if (res.ok) savedTrips = await res.json();
+	}
+
+	function saveTrip(walkId: string, plan: TripPlan) {
+		track('trip-save', { id: walkId });
+		return changeTrips(
+			fetch('/api/saved-trips', {
+				method: 'PUT',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ walkId, reversed, ...plan })
+			})
+		);
+	}
+
+	function forgetTrip(walkId: string, date: string) {
+		const params = new URLSearchParams({ walk: walkId, date });
+		return changeTrips(fetch(`/api/saved-trips?${params}`, { method: 'DELETE' }));
+	}
+
+	/** You walked it: done, on the day you'd planned, and off the list. */
+	async function walkedTrip(t: SavedTrip) {
+		const res = await fetch(`/api/walks/${encodeURIComponent(t.walkId)}`, {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ status: 'done', doneDate: t.date })
+		});
+		if (!res.ok) return;
+		onsaved(await res.json());
+		await forgetTrip(t.walkId, t.date);
+	}
+
+	/** A saved day out's own link, for opening it in a new tab. */
+	function tripHref(t: SavedTrip) {
+		const params = new URLSearchParams({ walk: t.walkId });
+		if (t.reversed) params.set('reverse', '1');
+		writePlan(params, t);
+		return `/?${params}`;
+	}
+
+	/** Open a saved day out: the walk, the way round you saved it, and its plan with its trains. */
+	async function openTrip(t: SavedTrip) {
+		opening?.abort();
+		if (!detail(t.walkId)) {
+			const controller = (opening = new AbortController());
+			try {
+				remember(await fetchWalk(t.walkId, controller.signal));
+			} catch {
+				return;
+			}
+		}
+		track('trip-open', { id: t.walkId });
+		const url = new URL(page.url.href);
+		url.searchParams.set('walk', t.walkId);
+		if (t.reversed) url.searchParams.set('reverse', '1');
+		else url.searchParams.delete('reverse');
+		writePlan(url.searchParams, t);
+		goto(url, { reset: false });
+	}
+
 	/** Where you are while you follow yourself on the open walk (the map's location button). */
 	let here = $state.raw<Here | null>(null);
 	let walkMap: WalkMap | undefined = $state();
@@ -693,7 +761,10 @@
 					onopen={(id) => select(id)}
 					{onsaved}
 					{here}
-					onfollow={() => walkMap?.follow()}
+					onfollow={() => walkMap?.follow() ?? false}
+					saved={savedTrips.filter((t) => t.walkId === selected.id)}
+					onsavetrip={(plan) => saveTrip(selected.id, plan)}
+					onforgettrip={(date) => forgetTrip(selected.id, date)}
 				/>
 			{/key}
 		{:else}
@@ -707,6 +778,52 @@
 					<a href="/login" data-sveltekit-reload>Inloggen</a> voor meer wandelingen en om bij te houden
 					wat je wilt lopen.
 				</p>
+			{/if}
+
+			<!-- Your saved days out: one line each, the next one first. -->
+			{#if savedTrips.length}
+				<section class="my-trips" aria-labelledby="my-trips-title">
+					<h2 id="my-trips-title">Mijn reizen</h2>
+					<ul>
+						{#each upcomingTrips as t (t.walkId + t.date)}
+							<li>
+								<a
+									href={tripHref(t)}
+									onclick={(e) => {
+										if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+										e.preventDefault();
+										openTrip(t);
+									}}
+									><span class="when tabular">{dayLabel(t.date)} · {t.out ?? t.time}</span>
+									{t.walkName}</a
+								>
+								<button
+									type="button"
+									class="forget"
+									aria-label="Reis {t.walkName} van {dayLabel(t.date)} niet meer bewaren"
+									title="Niet meer bewaren"
+									onclick={() => forgetTrip(t.walkId, t.date)}>×</button
+								>
+							</li>
+						{/each}
+						{#each pastTrips as t (t.walkId + t.date)}
+							<li class="past">
+								<span
+									><span class="when tabular">{dayLabel(t.date)}</span>
+									{t.walkName}: gelopen?</span
+								>
+								<button type="button" class="walked" onclick={() => walkedTrip(t)}>Ja</button>
+								<button
+									type="button"
+									class="forget"
+									aria-label="Reis {t.walkName} van {dayLabel(t.date)} weghalen"
+									title="Weghalen"
+									onclick={() => forgetTrip(t.walkId, t.date)}>×</button
+								>
+							</li>
+						{/each}
+					</ul>
+				</section>
 			{/if}
 
 			<!-- Outside the filters, which fold away on a phone: planning on a route is a way in, not a filter. -->
@@ -1078,6 +1195,75 @@
 
 	.count a {
 		color: inherit;
+	}
+
+	.my-trips {
+		margin: 6px 20px 2px;
+		font-size: var(--step--1);
+	}
+
+	.my-trips h2 {
+		margin: 0 0 2px;
+		color: var(--muted);
+		font-size: inherit;
+		font-weight: 400;
+	}
+
+	.my-trips ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.my-trips li {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.my-trips li > a,
+	.my-trips li > span {
+		flex: 1;
+		min-width: 0;
+		padding: 3px 0;
+		overflow: hidden;
+		color: var(--ink);
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.my-trips li > a {
+		text-decoration: none;
+	}
+
+	.my-trips li > a:hover {
+		text-decoration: underline;
+	}
+
+	.my-trips .when {
+		font-weight: 600;
+	}
+
+	.my-trips button {
+		flex: none;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--muted);
+		cursor: pointer;
+		font: inherit;
+	}
+
+	.my-trips .walked {
+		padding: 0 10px;
+		color: var(--ink);
+	}
+
+	.my-trips .forget {
+		width: 1.6rem;
+		height: 1.6rem;
+		padding: 0;
+		line-height: 1;
 	}
 
 	.route-pick {

@@ -25,6 +25,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		!(Number.isInteger(body.ownRating) && body.ownRating >= 1 && body.ownRating <= 5)
 	)
 		error(400, 'Rating must be 1–5');
+	if (body.doneDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(body.doneDate))
+		error(400, 'doneDate must be YYYY-MM-DD');
 	// A stretch you planned yourself becomes a walk of its own; the ingest's walks are there already.
 	keepPlannedWalk(conn, walk);
 	updateUserWalk(conn, locals.user, params.id, body);

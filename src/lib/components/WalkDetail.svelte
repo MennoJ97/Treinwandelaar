@@ -35,6 +35,7 @@
 		type Disruption,
 		type Feeders,
 		type Here,
+		type SavedTrip,
 		type Station,
 		type TripLeg,
 		type TripOption,
@@ -75,8 +76,14 @@
 		onsaved: (walk: WalkDetail) => void;
 		/** Where you are, while you follow yourself on the map. */
 		here?: Here | null;
-		/** Start following you on the map. */
-		onfollow?: () => void;
+		/** Start following you on the map; false when the browser won't give your location. */
+		onfollow?: () => boolean;
+		/** Your saved days out on this walk. */
+		saved?: SavedTrip[];
+		/** Save this plan as a day out on its date (again: the new plan replaces the old one). */
+		onsavetrip?: (plan: TripPlan) => void;
+		/** Forget the day out saved for `date`. */
+		onforgettrip?: (date: string) => void;
 	}
 
 	let {
@@ -98,7 +105,10 @@
 		onopen,
 		onsaved,
 		here = null,
-		onfollow
+		onfollow,
+		saved = [],
+		onsavetrip,
+		onforgettrip
 	}: Props = $props();
 
 	/** What it passes (OSM's walks), as on the walk's own page. */
@@ -192,13 +202,57 @@
 	const startsAtHome = $derived(walk.startStation === home.code);
 	const endsAtHome = $derived(walk.endStation === home.code);
 
-	async function fetchTrips(from: string, to: string, dateTime: string, signal?: AbortSignal) {
+	/**
+	 * Trains from `from` to `to` around `dateTime`. Out walking the signal comes and goes: each answer
+	 * is kept in this browser, and when the server can't be reached the last one comes back instead,
+	 * with `savedAt` saying from when.
+	 */
+	async function fetchTrips(
+		from: string,
+		to: string,
+		dateTime: string,
+		signal?: AbortSignal
+	): Promise<{ trips: TripOption[]; savedAt: number | null }> {
 		const params = new URLSearchParams({ from, to, dateTime });
-		const res = await fetch(`/api/trips?${params}`, { signal });
+		const key = params.toString();
+		let res: Response;
+		try {
+			res = await fetch(`/api/trips?${params}`, { signal });
+		} catch (err) {
+			const kept = signal?.aborted ? null : keptTrains(key);
+			if (kept) return { trips: kept.trips, savedAt: kept.at };
+			throw err;
+		}
 		if (!res.ok)
 			throw new Error((await res.json().catch(() => null))?.message ?? `HTTP ${res.status}`);
-		return (await res.json()) as TripOption[];
+		const trips = (await res.json()) as TripOption[];
+		keepTrains(key, trips);
+		return { trips, savedAt: null };
 	}
+
+	/** The last few train lists, newest first, by request. */
+	const TRAINS_KEY = 'treinwandelaar.trains';
+	const KEEP_TRAINS = 6;
+	type Kept = { key: string; at: number; trips: TripOption[] };
+	function readKept(): Kept[] {
+		try {
+			return JSON.parse(localStorage.getItem(TRAINS_KEY) ?? '[]');
+		} catch {
+			return [];
+		}
+	}
+	function keepTrains(key: string, trips: TripOption[]) {
+		const kept = [{ key, at: Date.now(), trips }, ...readKept().filter((k) => k.key !== key)];
+		try {
+			localStorage.setItem(TRAINS_KEY, JSON.stringify(kept.slice(0, KEEP_TRAINS)));
+		} catch {
+			/* no storage (private mode, or full): just not kept */
+		}
+	}
+	const keptTrains = (key: string) => readKept().find((k) => k.key === key) ?? null;
+	/** When the trains on screen were fetched, if they're kept ones because the server was out of reach. */
+	let outSavedAt = $state<number | null>(null);
+	let backSavedAt = $state<number | null>(null);
 
 	$effect(() => {
 		if (!hasNsKey || startsAtHome || !walk.startStation) {
@@ -210,7 +264,8 @@
 		outIndex = 0;
 		const requested = amsterdamIso(date, time);
 		fetchTrips(home.code, walk.startStation, requested, controller.signal)
-			.then((data) => {
+			.then(({ trips: data, savedAt }) => {
+				outSavedAt = savedAt;
 				// NS also returns a few trains just before the requested time; only show ones after it.
 				const trips = data.filter((t) => new Date(t.departure) >= new Date(requested));
 				outIndex = pick(trips, wantOut, (c) => (missedOut = c));
@@ -345,7 +400,8 @@
 		back = { status: 'loading' };
 		backIndex = 0;
 		fetchTrips(walk.endStation, home.code, end, controller.signal)
-			.then((data) => {
+			.then(({ trips: data, savedAt }) => {
+				backSavedAt = savedAt;
 				const trips = data.filter((t) => new Date(t.departure) >= new Date(end));
 				backIndex = pick(trips, wantBack, (c) => (missedBack = c));
 				wantBack = null;
@@ -363,7 +419,11 @@
 		if (!last) return;
 		loadingLater = true;
 		try {
-			const more = await fetchTrips(walk.endStation, home.code, addMinutes(last.departure, 1));
+			const { trips: more } = await fetchTrips(
+				walk.endStation,
+				home.code,
+				addMinutes(last.departure, 1)
+			);
 			const seen = new Set(back.data.map((t) => t.departure));
 			back = {
 				status: 'done',
@@ -376,17 +436,28 @@
 
 	const homeArrival = $derived(back.status === 'done' ? back.data[backIndex]?.arrival : null);
 
-	// The plan as it stands, for the link: a train still loading keeps the one the link asked for.
-	$effect(() => {
+	/** The plan as it stands: a train still loading keeps the one the link asked for. */
+	const current = $derived.by((): TripPlan => {
 		const out = outbound.status === 'done' ? outbound.data[outIndex] : null;
 		const backTrain = back.status === 'done' ? back.data[backIndex] : null;
-		onplan?.({
+		return {
 			date,
 			time,
 			out: out ? formatTime(out.departure) : wantOut,
 			back: backTrain ? formatTime(backTrain.departure) : wantBack
-		});
+		};
 	});
+	$effect(() => onplan?.(current));
+
+	/** The day out saved for this date, and whether it's the plan on screen. */
+	const savedTrip = $derived(saved.find((t) => t.date === date) ?? null);
+	const savedAsShown = $derived(
+		!!savedTrip &&
+			savedTrip.reversed === reversed &&
+			savedTrip.time === current.time &&
+			savedTrip.out === current.out &&
+			savedTrip.back === current.back
+	);
 
 	// The trains you picked, for the map; gone from it again when the walk closes.
 	$effect(() => {
@@ -444,6 +515,7 @@
 
 	/** You're walking today: offer to show where you are. */
 	const walkingToday = $derived(date === amsterdamYmd());
+	let noLocation = $state(false);
 
 	// --- Personal layer -----------------------------------------------------------------------------
 	async function save(update: {
@@ -577,7 +649,13 @@
 				>{/if}
 		</p>
 	{:else if walkingToday && onfollow}
-		<button type="button" class="follow" onclick={onfollow}>Volg mijn locatie op de kaart</button>
+		<button type="button" class="follow" onclick={() => (noLocation = !onfollow())}
+			>Volg mijn locatie op de kaart</button
+		>
+		{#if noLocation}<p class="muted">
+				Je browser geeft je locatie niet door. Geef deze site toestemming in de instellingen van je
+				browser of telefoon.
+			</p>{/if}
 	{/if}
 
 	{#if walk.photos.length}
@@ -664,6 +742,21 @@
 		<div class="when">
 			<label>Datum <input type="date" bind:value={date} /></label>
 			<label>Vertrek vanaf <input type="time" bind:value={time} step="300" /></label>
+			{#if !demo && onsavetrip}
+				<!-- Saved, the day out is under "Mijn reizen" on the list, to open again with these trains. -->
+				<button
+					type="button"
+					class="save-trip"
+					aria-pressed={savedAsShown}
+					title={savedAsShown ? 'Niet meer bewaren' : 'Bewaren onder Mijn reizen'}
+					onclick={() => (savedAsShown ? onforgettrip?.(date) : onsavetrip(current))}
+					>{savedAsShown
+						? '✓ Bewaard'
+						: savedTrip
+							? 'Bewaar wijzigingen'
+							: 'Bewaar deze reis'}</button
+				>
+			{/if}
 		</div>
 
 		{#each disruptions as d (d.id)}
@@ -711,6 +804,11 @@
 						{:else if outbound.status === 'done' && !outbound.data.length}
 							<p class="notice">Geen treinen gevonden rond dit tijdstip. Kies een andere tijd.</p>
 						{:else if outbound.status === 'done'}
+							{#if outSavedAt}<p class="notice">
+									Geen verbinding: dit zijn de treintijden van {formatTime(
+										new Date(outSavedAt).toISOString()
+									)}.
+								</p>{/if}
 							{#if missedOut}<p class="notice">
 									De trein van {missedOut} staat er niet (meer) bij; dit is de eerstvolgende.
 								</p>{/if}
@@ -806,6 +904,11 @@
 								Geen treinen meer na aankomst. Vertrek eerder of kies een andere dag.
 							</p>
 						{:else if back.status === 'done'}
+							{#if backSavedAt}<p class="notice">
+									Geen verbinding: dit zijn de treintijden van {formatTime(
+										new Date(backSavedAt).toISOString()
+									)}.
+								</p>{/if}
 							{#if missedBack}<p class="notice">
 									De trein terug van {missedBack} staat er niet (meer) bij; dit is de eerstvolgende die
 									je haalt.
@@ -1071,6 +1174,25 @@
 		flex-wrap: wrap;
 		gap: 12px;
 		margin-bottom: 14px;
+	}
+
+	/* Bottom-aligned with the inputs beside it, which sit under their labels. */
+	.save-trip {
+		align-self: flex-end;
+		margin-left: auto;
+		padding: 5px 12px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--ink);
+		cursor: pointer;
+		font-size: var(--step--1);
+	}
+
+	.save-trip[aria-pressed='true'] {
+		border-color: var(--path);
+		background: var(--path);
+		color: var(--on-accent);
 	}
 
 	.when label {

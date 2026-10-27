@@ -46,3 +46,19 @@ export function dropTrains(params: URLSearchParams) {
 }
 
 export const PLAN_KEYS = ['date', 'time', 'out', 'back'] as const;
+
+const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** A plan as a request body may hold it: a real date and HH:MM clocks, the trains optional. */
+export function isPlan(value: unknown): value is TripPlan {
+	const p = value as Partial<TripPlan> | null;
+	const clockOrNull = (c: unknown) => c == null || (typeof c === 'string' && CLOCK.test(c));
+	return (
+		typeof p?.date === 'string' &&
+		DATE.test(p.date) &&
+		typeof p.time === 'string' &&
+		CLOCK.test(p.time) &&
+		clockOrNull(p.out) &&
+		clockOrNull(p.back)
+	);
+}

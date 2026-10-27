@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dropTrains, readPlan, writePlan } from './plan';
+import { dropTrains, isPlan, readPlan, writePlan } from './plan';
 
 describe('trip plan in the link', () => {
 	it('round-trips through the query string', () => {
@@ -27,5 +27,15 @@ describe('trip plan in the link', () => {
 		expect(readPlan(new URLSearchParams('date=morgen&time=0915'))).toBeNull();
 		expect(readPlan(new URLSearchParams('date=2026-10-31&time=2575'))).toBeNull();
 		expect(readPlan(new URLSearchParams('date=2026-10-31&time=0915&out=x'))?.out).toBeNull();
+	});
+});
+
+describe('a plan in a request body', () => {
+	it('takes a date with HH:MM clocks and optional trains only', () => {
+		expect(isPlan({ date: '2026-10-31', time: '09:15', out: null, back: '16:42' })).toBe(true);
+		expect(isPlan({ date: '2026-10-31', time: '9:15', out: null, back: null })).toBe(false);
+		expect(isPlan({ date: '31-10-2026', time: '09:15' })).toBe(false);
+		expect(isPlan({ date: '2026-10-31', time: '09:15', out: 'nu' })).toBe(false);
+		expect(isPlan(null)).toBe(false);
 	});
 });

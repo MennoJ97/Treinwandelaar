@@ -165,6 +165,17 @@ export interface TripLeg {
 	line: [number, number][];
 }
 
+/** A day out you saved: which walk, which way round, and the plan to open it with. */
+export interface SavedTrip {
+	walkId: string;
+	walkName: string;
+	reversed: boolean;
+	date: string;
+	time: string;
+	out: string | null;
+	back: string | null;
+}
+
 /** Where you are, from the phone's location while you follow yourself on an open walk. */
 export interface Here {
 	lng: number;

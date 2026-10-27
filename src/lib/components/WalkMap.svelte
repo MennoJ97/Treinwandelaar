@@ -770,12 +770,15 @@
 		return control;
 	}
 
-	/** Start following you, as a press on the map's location button would (the walk's own button). */
-	export function follow() {
-		const button = container?.querySelector<HTMLButtonElement>(
-			'.maplibregl-ctrl-geolocate[aria-pressed="false"]'
-		);
-		if (following && button) geolocate?.trigger();
+	/**
+	 * Start following you, as a press on the map's location button would (the walk's own button).
+	 * False when the browser won't tell where you are: no location, or you said no to the site.
+	 */
+	export function follow(): boolean {
+		const button = container?.querySelector<HTMLButtonElement>('.maplibregl-ctrl-geolocate');
+		if (!following || !button || button.disabled) return false;
+		if (button.getAttribute('aria-pressed') !== 'true') geolocate?.trigger();
+		return true;
 	}
 
 	/** A route picked to plan on: show all of it, unless a walk is open (that frames itself). */
