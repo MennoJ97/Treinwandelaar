@@ -20,19 +20,22 @@
 	/*
 	  Greys, type and the light/dark switch come from the family site's family.css (FAMILY_SITE,
 	  linked in app.html), like on every site of that family; the fallbacks below stand in without it. This file only names them the way the components do
-	  and adds what is specific to this app: the rail/footpath colours of the journey diagram, the
+	  and adds what is specific to this app: the rail colour of the journey diagram, the
 	  travel-time ramp on the map and the map's own colours. Dark values use the family's pair of
 	  selectors, so keep the two blocks identical.
 	*/
 	:global(:root) {
 		--paper: var(--bg);
 		--line: var(--rule);
-		/* NS yellow, as NS uses it: a fill (logo tile, home station, your rating), never text. */
+		/* NS yellow, as NS uses it: a fill, never text. Walking (the route, the timetable's walk),
+		   what's yours and what's on (pressed buttons, tags, sliders): outlined dark where it's a
+		   line on the page. */
 		--signal: var(--treinwandelaar, #ffc917);
 		/* On the yellow (the day's route, its buttons): dark in both themes, as the yellow stays. */
 		--on-signal: #111111;
 
 		--rail: #1f3a93;
+		/* The whole LAW routes and streekpaden on the map, and the one you plan on. */
 		--path: #2e7a4c;
 		--warn: #a14a12;
 		/* The open walk's trains and buses on the map: grey, the basemap's own colour for railways,

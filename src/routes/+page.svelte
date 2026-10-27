@@ -1527,9 +1527,17 @@
 		font-weight: 700;
 	}
 
+	/* Yours: a yellow tag, like the buttons that set it (yellow is a fill, never text). */
 	.stations em.done,
 	.stations em.wishlist {
-		color: var(--path);
+		display: inline-block;
+		padding: 0 6px;
+		white-space: nowrap;
+		border-radius: 999px;
+		background: var(--signal);
+		color: var(--on-signal);
+		font-size: 0.9em;
+		font-weight: 600;
 	}
 
 	.numbers {

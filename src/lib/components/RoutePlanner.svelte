@@ -199,14 +199,16 @@
 		cursor: pointer;
 	}
 
+	/* The route in yellow, outlined dark, as on the day page's map. */
 	.stops button::before {
 		content: '';
 		position: absolute;
 		top: 0;
 		bottom: 0;
-		left: 25px;
-		width: 3px;
-		background: var(--path);
+		left: 23px;
+		width: 5px;
+		border-inline: 1px solid var(--on-signal);
+		background: var(--signal);
 	}
 
 	.stops button::after {
@@ -216,7 +218,7 @@
 		left: 20px;
 		width: 9px;
 		height: 9px;
-		border: 2px solid var(--path);
+		border: 2px solid var(--ink);
 		border-radius: 50%;
 		background: var(--surface);
 	}
@@ -282,7 +284,7 @@
 		top: 0;
 		bottom: 0;
 		left: 25px;
-		border-left: 3px dotted var(--path);
+		border-left: 3px dotted var(--muted);
 	}
 
 	.travel {

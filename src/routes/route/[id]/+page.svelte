@@ -127,6 +127,7 @@
 				role="img"
 				aria-label="Vorm van de route, noorden boven"
 			>
+				<path class="casing" d={s.d} />
 				<path d={s.d} />
 				<circle class="start" cx={s.start[0]} cy={s.start[1]} r="6" />
 				{#if !walk.isLoop}<circle class="end" cx={s.end[0]} cy={s.end[1]} r="6" />{/if}
@@ -266,13 +267,19 @@
 		border-radius: var(--radius);
 	}
 
+	/* Yellow outlined dark, as the route on the day page's map. */
 	.sketch path {
 		fill: none;
-		stroke: var(--path);
-		stroke-width: 3;
+		stroke: var(--signal);
+		stroke-width: 4;
 		stroke-linejoin: round;
 		stroke-linecap: round;
 		vector-effect: non-scaling-stroke;
+	}
+
+	.sketch .casing {
+		stroke: var(--on-signal);
+		stroke-width: 7;
 	}
 
 	.sketch circle {

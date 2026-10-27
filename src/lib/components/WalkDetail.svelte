@@ -1221,16 +1221,21 @@
 		background: var(--rail);
 	}
 
-	.path .line {
-		width: 0;
-		border-left: 4px dashed var(--path);
+	/* On foot: yellow outlined dark, as the route on the day page's map; the train is the blue. */
+	.path .line,
+	.access .line {
+		box-sizing: border-box;
+		width: 8px;
+		border: 1.5px solid var(--on-signal);
+		border-radius: 2px;
+		background: var(--signal);
 	}
 
-	/* On foot between the station and the route: the walk's line, thinner. */
+	/* Between the station and the route: the walk's line, thinner. */
 	.access .line {
-		width: 0;
+		width: 6px;
 		min-height: 26px;
-		border-left: 2px dashed var(--path);
+		border-width: 1px;
 	}
 
 	.access .body p {

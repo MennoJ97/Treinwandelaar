@@ -829,8 +829,12 @@
 		white-space: nowrap;
 	}
 
+	/* The good news as a yellow tag; "krap" stays bold, "haal je niet" orange. */
 	.ok {
-		color: var(--path);
+		padding: 0 6px;
+		border-radius: 999px;
+		background: var(--signal);
+		color: var(--on-signal);
 		font-weight: 700;
 	}
 
