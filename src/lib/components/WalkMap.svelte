@@ -112,6 +112,33 @@
 		return { top: base, right: base, left: 412 + base, bottom: base + (legend ? 124 : 0) };
 	}
 
+	const ROUTES_OPACITY: ExpressionSpecification = [
+		'interpolate',
+		['linear'],
+		['zoom'],
+		7,
+		0.6,
+		12,
+		0.7
+	];
+	/** How much of the other walks and routes still shows while you follow yourself on one. */
+	const FADED = 0.15;
+
+	/**
+	 * Out walking, the other walks and the whole routes fade to a trace: still there to see where
+	 * you could go, but yours is the one that stands out. Back to normal once you stop following.
+	 */
+	function applyFocus(m: MlMap) {
+		if (!m.getLayer('walks-line')) return;
+		const mine = ['==', ['get', 'id'], selectedId ?? ''] as ExpressionSpecification;
+		const walks = (focused ? ['case', mine, 1, FADED] : 1) as ExpressionSpecification | number;
+		m.setPaintProperty('walks-casing', 'line-opacity', walks);
+		m.setPaintProperty('walks-line', 'line-opacity', walks);
+		m.setPaintProperty('walk-ends', 'circle-opacity', walks);
+		m.setPaintProperty('walk-ends', 'circle-stroke-opacity', walks);
+		m.setPaintProperty('routes-line', 'line-opacity', focused ? FADED / 2 : ROUTES_OPACITY);
+	}
+
 	function cssVar(name: string) {
 		return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 	}
@@ -386,7 +413,7 @@
 			layout: { 'line-cap': 'round', 'line-join': 'round' },
 			paint: {
 				'line-color': cssVar('--path'),
-				'line-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.6, 12, 0.7],
+				'line-opacity': ROUTES_OPACITY,
 				'line-width': ['interpolate', ['linear'], ['zoom'], 7, 1.5, 12, 3]
 			}
 		});
@@ -612,6 +639,7 @@
 				'text-halo-width': 1.75
 			}
 		});
+		applyFocus(m);
 	}
 
 	onMount(() => {
@@ -645,10 +673,12 @@
 				// Layer-bound listeners belong to the map, so they survive a style swap.
 				m.on('click', 'walks-hit', (e) => {
 					const id = e.features?.[0]?.properties?.id;
-					if (id) onselect(id);
+					// Out walking, a tap on a faded walk shouldn't swap yours for it.
+					if (id && !(focused && id !== selectedId)) onselect(id);
 				});
 				// A whole route under a walk: the walk wins, it's what you see on top.
 				m.on('click', 'routes-hit', (e) => {
+					if (focused) return;
 					if (m.queryRenderedFeatures(e.point, { layers: ['walks-hit'] }).length) return;
 					const id = e.features?.[0]?.properties?.id;
 					if (id) onroute(id);
@@ -708,7 +738,7 @@
 		untrack(() => {
 			if (geolocate) {
 				m.removeControl(geolocate);
-				onposition(null);
+				report(null);
 			}
 			// The button gets its label once MapLibre has checked, a moment later, that the browser
 			// can locate at all, from the map's locale table: there's no option per control.
@@ -721,6 +751,19 @@
 	});
 
 	const FOLLOW_LABEL = 'Volg mijn locatie op de route';
+
+	/** You're following yourself on the open walk: it's the only one that matters now. */
+	let focused = $state(false);
+	function report(here: Here | null) {
+		focused = here !== null;
+		onposition(here);
+	}
+
+	$effect(() => {
+		void focused;
+		void selectedId;
+		if (ready && map) untrack(() => applyFocus(map!));
+	});
 
 	function stationControl(ml: typeof import('maplibre-gl'), m: MlMap) {
 		const control = new ml.GeolocateControl({});
@@ -749,7 +792,7 @@
 			fitBoundsOptions: { padding: panelPadding(40), maxZoom: 16 }
 		});
 		control.on('geolocate', ({ coords, timestamp }) =>
-			onposition({
+			report({
 				lng: coords.longitude,
 				lat: coords.latitude,
 				accuracyM: coords.accuracy,
@@ -761,11 +804,11 @@
 		control.on('trackuserlocationend', () =>
 			queueMicrotask(() => {
 				if (container.querySelector('.maplibregl-ctrl-geolocate[aria-pressed="false"]'))
-					onposition(null);
+					report(null);
 			})
 		);
 		control.on('error', (e) => {
-			if (e.code === GeolocationPositionError.PERMISSION_DENIED) onposition(null);
+			if (e.code === GeolocationPositionError.PERMISSION_DENIED) report(null);
 		});
 		return control;
 	}
