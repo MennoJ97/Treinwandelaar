@@ -1152,11 +1152,7 @@
 			display: none;
 		}
 
-		/* Thumb-sized targets: the pills and checkboxes are tapped, not clicked. */
-		.kinds button {
-			padding: 6px 12px;
-		}
-
+		/* Thumb-sized targets: the checkboxes are tapped, not clicked (the pills: see below). */
 		.checks label {
 			padding: 4px 0;
 		}
@@ -1169,12 +1165,19 @@
 	}
 
 	.kinds button {
-		padding: 3px 10px;
+		padding: 1px 8px;
 		border: 1px solid var(--line);
 		border-radius: 999px;
 		background: var(--surface);
 		color: var(--muted);
 		cursor: pointer;
+	}
+
+	/* After the rule above, or it loses: on a phone the pills are tapped, so a little taller. */
+	@media (max-width: 799px) {
+		.kinds button {
+			padding: 2px 10px;
+		}
 	}
 
 	.kinds button[aria-pressed='true'] {
