@@ -629,6 +629,8 @@
 				homeName={homeStation?.name ?? ''}
 				dayLabel={dayLabel(day)}
 				loading={reachStatus === 'loading'}
+				routes={data.paths.length > 0 && !routeId}
+				bind:showRoutes
 			/>
 		</div>
 	</div>
@@ -745,33 +747,19 @@
 						{/each}
 					</div>
 				{/if}
+				<!-- Short labels, so they pair up two to a row; they wrap back to one each with big text. -->
 				<div class="checks">
 					{#if !data.demo}
 						<label
-							><input type="checkbox" bind:checked={onlyWishlist} /> Alleen wandelingen die ik wil lopen</label
+							><input type="checkbox" bind:checked={onlyWishlist} /> Alleen ‘wil ik lopen’</label
 						>
 						<label><input type="checkbox" bind:checked={hideDone} /> Verberg gelopen</label>
 					{/if}
 					<label><input type="checkbox" bind:checked={noBus} /> Alleen station tot station</label>
-					<label
-						><input type="checkbox" bind:checked={hideDisrupted} /> Zonder werkzaamheden of storingen</label
+					<label title="Zonder werkzaamheden of storingen"
+						><input type="checkbox" bind:checked={hideDisrupted} /> Zonder storingen</label
 					>
-					{#if data.paths.length}
-						<label
-							><input type="checkbox" bind:checked={showRoutes} /> Hele LAW-routes en streekpaden op de
-							kaart</label
-						>
-					{/if}
 				</div>
-				<label class="sort">
-					<span>Sorteer op</span>
-					<select bind:value={sort}>
-						<option value="travel">reistijd</option>
-						<option value="rating">waardering</option>
-						<option value="distance">afstand</option>
-						<option value="name">naam</option>
-					</select>
-				</label>
 			</div>
 
 			{#if !data.hasNsKey}
@@ -817,14 +805,26 @@
 				/>
 			{/if}
 
-			<p class="count">
-				{#if routeId}
-					{visible.length} kant-en-klare dagwandelingen op deze route
-				{:else}
-					{visible.length} van {walks.length} wandelingen ·
-					<a href="/route/" data-sveltekit-reload>alle op een rij</a>
-				{/if}
-			</p>
+			<!-- Sorting orders the list rather than narrowing it, so it heads the list, folded filters or not. -->
+			<div class="count">
+				<p>
+					{#if routeId}
+						{visible.length} kant-en-klare dagwandelingen op deze route
+					{:else}
+						{visible.length} van {walks.length} ·
+						<a href="/route/" data-sveltekit-reload>alle op een rij</a>
+					{/if}
+				</p>
+				<label class="sort">
+					<span>Sorteer op</span>
+					<select bind:value={sort}>
+						<option value="travel">reistijd</option>
+						<option value="rating">waardering</option>
+						<option value="distance">afstand</option>
+						<option value="name">naam</option>
+					</select>
+				</label>
+			</div>
 
 			{#if visible.length}
 				<ul class="walks">
@@ -1027,7 +1027,7 @@
 	}
 
 	.intro {
-		padding: 18px 20px 6px;
+		padding: 14px 20px 6px;
 	}
 
 	.intro h1 {
@@ -1045,7 +1045,7 @@
 		grid-template-columns: auto minmax(0, 1fr);
 		align-items: center;
 		gap: 10px;
-		margin: 8px 20px 4px;
+		margin: 6px 20px 2px;
 		color: var(--muted);
 		font-size: var(--step--1);
 	}
@@ -1063,7 +1063,7 @@
 
 	.filters {
 		display: grid;
-		gap: 8px;
+		gap: 6px;
 		padding: 12px 20px;
 		border-bottom: 1px solid var(--line);
 		font-size: var(--step--1);
@@ -1201,7 +1201,6 @@
 
 	.filters input.day,
 	.sort select {
-		grid-column: 2 / 4;
 		min-width: 0;
 		padding: 2px 4px;
 		border: 1px solid var(--line);
@@ -1221,6 +1220,31 @@
 		margin: 10px 20px 4px;
 		color: var(--muted);
 		font-size: var(--step--1);
+	}
+
+	/* The sort keeps to the right; when the count's text is too long for both, it drops below. */
+	.count {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		align-items: center;
+		gap: 4px 12px;
+	}
+
+	.count p {
+		margin: 0;
+	}
+
+	.sort {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-left: auto;
+	}
+
+	.sort select {
+		color: var(--ink);
+		font: inherit;
 	}
 
 	.notice {

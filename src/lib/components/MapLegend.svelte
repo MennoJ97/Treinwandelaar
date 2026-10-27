@@ -9,9 +9,19 @@
 		loading: boolean;
 		/** A walk is open: its trains and buses are on the map too. */
 		transit?: boolean;
+		/** Offer to draw the whole LAW-routes and streekpaden: it changes the map, not the list. */
+		routes?: boolean;
+		showRoutes?: boolean;
 	}
 
-	let { homeName, dayLabel, loading, transit = false }: Props = $props();
+	let {
+		homeName,
+		dayLabel,
+		loading,
+		transit = false,
+		routes = false,
+		showRoutes = $bindable(false)
+	}: Props = $props();
 
 	const steps = [
 		{ band: 'near', label: '< 30' },
@@ -44,6 +54,11 @@
 			<span><span class="rail" aria-hidden="true"></span>trein</span>
 			<span><span class="bus" aria-hidden="true"></span>bus</span>
 		</p>
+	{/if}
+	{#if routes}
+		<label class="routes"
+			><input type="checkbox" bind:checked={showRoutes} /> Hele LAW-routes en streekpaden</label
+		>
 	{/if}
 </figure>
 
@@ -156,6 +171,21 @@
 		background: repeating-linear-gradient(90deg, var(--transit) 0 3px, transparent 3px 6px);
 	}
 
+	.routes {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: 6px;
+		padding-top: 6px;
+		border-top: 1px solid var(--line);
+		color: var(--ink);
+		cursor: pointer;
+	}
+
+	.routes input {
+		margin: 0;
+	}
+
 	/* Small screens: the list covers the map's bottom and the station picker sits right under the
 	   key, so it drops the station, keeps to one caption line, and rides on the list's top edge. */
 	@media (max-width: 799px) {
@@ -197,6 +227,13 @@
 
 		.bar {
 			height: 7px;
+		}
+
+		/* Tapped, not clicked: the whole line is the target. */
+		.routes {
+			margin-top: 4px;
+			padding: 5px 0 1px;
+			white-space: nowrap;
 		}
 	}
 </style>
