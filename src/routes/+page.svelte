@@ -413,6 +413,13 @@
 		return walk && reversed ? reverseWalk(walk) : walk;
 	});
 	/**
+	 * ?walk= is the map view of a walk with its own page under /route/: that page is the one to index.
+	 * Only the walk the server opened knows it has one; any other view points at the home page.
+	 */
+	const canonical = $derived(
+		page.url.origin + (data.walkPage && selectedId === data.selected?.id ? data.walkPage : '/')
+	);
+	/**
 	 * A stretch you planned yourself isn't in the list; the map shows it all the same. The open walk
 	 * is drawn as you'd walk it, so its start and end markers follow a reversal.
 	 */
@@ -543,11 +550,11 @@
 <svelte:head>
 	<title>{selected ? walkTitle(selected) : TITLE}</title>
 	<meta name="description" content={DESCRIPTION} />
-	<link rel="canonical" href="{page.url.origin}/" />
+	<link rel="canonical" href={canonical} />
 	<meta property="og:type" content="website" />
 	<meta property="og:title" content={TITLE} />
 	<meta property="og:description" content={DESCRIPTION} />
-	<meta property="og:url" content="{page.url.origin}/" />
+	<meta property="og:url" content={canonical} />
 	{@html `<script type="application/ld+json">${JSON.stringify({
 		'@context': 'https://schema.org',
 		'@type': 'WebSite',
