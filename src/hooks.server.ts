@@ -14,5 +14,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 			fillTemplate(html, event.url.origin, FAMILY_SITE, UMAMI_WEBSITE_ID)
 	});
 	// A load's fetch to our own API is answered in-process and read as-is: leave it plain.
-	return event.isSubRequest ? response : compress(event.request, response);
+	if (event.isSubRequest) return response;
+	// Crawlers may fetch the API (Google needs it to draw the map), but a GPX or GeoJSON download is
+	// no search result: the walk's page under /route/ is.
+	if (event.url.pathname.startsWith('/api/')) response.headers.set('x-robots-tag', 'noindex');
+	return compress(event.request, response);
 };

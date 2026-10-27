@@ -4,6 +4,7 @@ import { db, homeStation, ns } from '#lib/server/context.js';
 import { timetableLastDay } from '#lib/server/railRouter.js';
 import { listPaths } from '#lib/server/paths.js';
 import { getWalk, listWalks, osmUpdated, wandelnetUpdated, withStages } from '#lib/server/walks.js';
+import { walkPath } from '#lib/walk.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ url, locals, untrack }) => {
@@ -15,6 +16,14 @@ export const load: PageServerLoad = ({ url, locals, untrack }) => {
 	const selected = found && withStages(conn, found, locals.user);
 	if (selectedId && !selected) error(404, 'Deze wandeling bestaat niet (meer).');
 	return {
+		/**
+		 * The open walk's own page under /route/, for the canonical link: only a stored walk an
+		 * anonymous visitor may see has one (not a planned stretch, not Wandelnet's).
+		 */
+		walkPage:
+			selectedId && getWalk(conn, selectedId, null, { planned: false })
+				? walkPath(selectedId)
+				: null,
 		walks: listWalks(conn, locals.user),
 		/** LAW routes and streekpaden to plan your own stretches on (their lines come with /api/paths). */
 		paths: listPaths(conn, locals.user),
