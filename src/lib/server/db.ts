@@ -83,6 +83,31 @@ create table if not exists walk_photos (
 );
 
 -- Whole LAW routes and streekpaden, to plan your own station-to-station stretches (src/lib/path.ts).
+create table if not exists weather_ensemble (
+	date text not null,               -- YYYY-MM-DD
+	cell text not null,               -- 'lat,lng' of the grid point, see src/lib/weather.ts
+	fetched_at integer not null,      -- ms
+	masks blob not null,              -- little-endian uint32 per scenario: its wet hours
+	primary key (date, cell)
+);
+
+-- The day's first forecast, kept to check later how well the chances held up.
+create table if not exists weather_ensemble_archive (
+	issued_on text not null,
+	date text not null,
+	cell text not null,
+	masks blob not null,
+	primary key (issued_on, date, cell)
+);
+
+create table if not exists weather_hourly (
+	date text not null,
+	cell text not null,
+	fetched_at integer not null,
+	mm text not null,                 -- JSON array of mm per hour from FIRST_HOUR
+	primary key (date, cell)
+);
+
 create table if not exists paths (
 	id text primary key,              -- 'pad:<slug>' | 'osm:<slug>'
 	source text not null,

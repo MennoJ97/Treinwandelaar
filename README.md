@@ -28,6 +28,9 @@ Without `NS_API_KEY`, stations come from OpenStreetMap and the app works without
 | `ingest:nsnl`      | ns.nl/dagje-uit/wandelen pages                            | photos, paved %, dogs policy                                            |
 | `ingest:osm`       | Geofabrik's OSM extract of NL (~1.4 GB, weekly), osmium   | LAW, streekpad and local walks from OpenStreetMap, and what each passes |
 
+`ingest:weather` (Open-Meteo: ECMWF's ensemble and KNMI's model) gives the rain forecast per grid cell the walks pass, for
+the "droogste eerst" sort and the rain bar on a walk's page.
+
 Raw responses are cached in `data/raw` (re-download with `-- --refresh`), at most one request per second.
 `ingest:osm` needs [osmium](https://osmcode.org/osmium-tool/) (`brew install osmium-tool`, or
 `apt install osmium-tool`; the Docker image has it) and keeps the extract in `data/osm`.
@@ -59,7 +62,8 @@ docker compose up -d --build
 docker compose run --rm ingest   # first fill
 ```
 
-The timetable needs nothing more: run `ingest:gtfs` daily (it only downloads when OVapi has a newer feed). For the
+The rain forecast is optional: run `ingest:weather` every 6 hours for the sort and the bar; without it, or more than 36 hours
+after the last run, the site simply shows no forecast. The timetable needs nothing more: run `ingest:gtfs` daily (it only downloads when OVapi has a newer feed). For the
 walks, `npm run ingest:weekly` is light: it downloads only the overview pages afresh (`--refresh-lists`), so new
 walks come in and delisted ones go while known walks' pages stay cached. On the first Monday of each quarter, or with
 `-- --full`, it downloads every Wandelnet page again (`--refresh`) to pick up edited routes; a page that fails to
@@ -150,6 +154,7 @@ repository contains none of it: the test fixtures are hand-written in the shape 
 | Photos, paved %, dogs policy       | [NS](https://www.ns.nl)                                                              | Copyright of NS ([disclaimer](https://www.ns.nl/disclaimer)); not licensed for reuse                                                                                                 |
 | Stations, disruptions, trips       | [NS API](https://apiportal.ns.nl)                                                    | Your own key, under the [API conditions](https://apiportal.ns.nl/voorwaarden): only to inform travellers about future journeys, no NS logo, don't suggest NS checked the information |
 | Rail timetable (GTFS)              | [OVapi](https://gtfs.ovapi.nl) / Stichting OpenGeo                                   | Free to use; don't claim to represent the transport operators                                                                                                                        |
+| Rain forecast                      | [Open-Meteo](https://open-meteo.com) (ECMWF, KNMI)                                   | [CC BY 4.0](https://open-meteo.com/en/license), free for non-commercial use; credit it                                                                                               |
 | Base map                           | [OpenFreeMap](https://openfreemap.org)                                               | © OpenMapTiles, © OpenStreetMap contributors (shown on the map)                                                                                                                      |
 | Stations without an NS key         | OpenStreetMap via Overpass                                                           | [ODbL](https://www.openstreetmap.org/copyright), © OpenStreetMap contributors                                                                                                        |
 | Demo walks: LAW, streekpad, local  | OpenStreetMap via [Geofabrik](https://download.geofabrik.de/europe/netherlands.html) | [ODbL](https://www.openstreetmap.org/copyright), © OpenStreetMap contributors; see below for why these routes may be in OSM at all                                                   |

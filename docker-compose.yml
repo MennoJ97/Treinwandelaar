@@ -18,6 +18,15 @@ services:
     #   - traefik.http.middlewares.treinwandelaar-proxy-secret.headers.customrequestheaders.X-Proxy-Secret=${PROXY_SECRET}
     #   - traefik.http.services.treinwandelaar.loadbalancer.server.port=3000
 
+  # The rain forecast, every 6 hours. Optional: without it the site shows no forecast.
+  weather-updater:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/data
+    command: ['sh', '-c', 'while true; do npm run ingest:weather; sleep 21600; done']
+
   # Refresh stations and walks: `docker compose run --rm ingest` (e.g. weekly from the host's cron).
   ingest:
     build: .
