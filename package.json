@@ -22,6 +22,7 @@
 		"ingest:paden": "tsx --env-file-if-exists=.env scripts/ingest/paden.ts",
 		"ingest:gtfs": "tsx --env-file-if-exists=.env scripts/ingest/gtfs.ts",
 		"ingest:osm": "NODE_OPTIONS=--max-old-space-size=1536 tsx --env-file-if-exists=.env scripts/ingest/osm.ts",
+		"ingest:weather": "tsx --env-file-if-exists=.env scripts/ingest/weather.ts",
 		"ingest:cards": "tsx --env-file-if-exists=.env scripts/ingest/cards.ts",
 		"ingest:weekly": "sh scripts/ingest/weekly.sh"
 	},

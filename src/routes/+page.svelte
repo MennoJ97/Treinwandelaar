@@ -13,8 +13,27 @@
 	import { stretchId } from '#lib/path.js';
 	import { dayPath, dropTrains, readPlan, writePlan, type TripPlan } from '#lib/plan.js';
 	import { track } from '#lib/track.js';
-	import { HOME_KEY, readHome } from '#lib/trains.js';
-	import { amsterdamYmd, formatDuration, nextSaturdayMorning, travelBand } from '#lib/itinerary.js';
+	import { HOME_KEY, readHome, readPace } from '#lib/trains.js';
+	import {
+		accessMinutes,
+		amsterdamYmd,
+		busMinutes,
+		DEFAULT_PACE,
+		formatDuration,
+		nextSaturdayMorning,
+		travelBand,
+		walkMinutes
+	} from '#lib/itinerary.js';
+	import {
+		amsterdamMinutes,
+		dryBand,
+		dryChance,
+		dryLabel,
+		leaveMinutes,
+		toForecast,
+		type DayForecast,
+		type WeatherResponse
+	} from '#lib/weather.js';
 	import {
 		COLLECTION_LABELS,
 		type Collection,
@@ -182,6 +201,66 @@
 		return [...ids].map((id) => disruptions[id]).filter(Boolean);
 	}
 
+	// --- The chance of staying dry, for the hours you'd walk each walk -------------------------------
+	let forecast = $state.raw<DayForecast | null>(null);
+	let forecastStatus = $state<'loading' | 'done'>('loading');
+	$effect(() => {
+		const controller = new AbortController();
+		forecast = null;
+		forecastStatus = 'loading';
+		fetch(`/api/weather?date=${day}`, { signal: controller.signal })
+			.then((r) => (r.ok ? r.json() : null))
+			.then((r: WeatherResponse | null) => {
+				forecast = r && toForecast(r);
+				forecastStatus = 'done';
+			})
+			.catch(() => {
+				if (!controller.signal.aborted) forecastStatus = 'done';
+			});
+		return () => controller.abort();
+	});
+
+	/** As the planner's sliders last set it, read again each time you come back from a walk. */
+	let pace = $state.raw(DEFAULT_PACE);
+	$effect(() => {
+		void selectedId;
+		pace = readPace();
+	});
+
+	const clock = (minutes: number) => {
+		const rounded = Math.round(minutes / 5) * 5;
+		return `${String(Math.floor(rounded / 60)).padStart(2, '0')}:${String(rounded % 60).padStart(2, '0')}`;
+	};
+
+	/**
+	 * Per walk, its chance and hours when leaving home at the time last set in a walk's planner for this
+	 * day. The travel times are for departures around 09:00 whatever the time, so this is close enough
+	 * to choose a walk; the walk's own page knows the real train.
+	 */
+	const leave = $derived(
+		leaveMinutes(
+			trip?.date === day ? trip.time : null,
+			day === today ? amsterdamMinutes(new Date()) : null
+		)
+	);
+	const dry = $derived.by(() => {
+		const result: Record<string, { chance: number; hours: string }> = {};
+		if (!forecast) return result;
+		for (const w of walks) {
+			const train = minutesTo(w);
+			if (train == null) continue;
+			const access = needsBus(w)
+				? busMinutes(w.startStationM!)
+				: accessMinutes(w.startStationM ?? 0, pace.speedKmh);
+			const start = leave + train + access;
+			const minutes = walkMinutes(w.distanceKm, pace);
+			const chance = dryChance(w.geometry, start, minutes, forecast);
+			if (chance != null)
+				result[w.id] = { chance, hours: `${clock(start)}–${clock(start + minutes)}` };
+		}
+		return result;
+	});
+
 	// --- One LAW route or streekpad, to plan your own stretches of it ------------------------------
 	// In the URL like the walk, so a reload or a link keeps it.
 	const routeId = $derived(page.url.searchParams.get('route'));
@@ -283,7 +362,7 @@
 			/* private mode: fine, just not remembered */
 		}
 	});
-	let sort = $state<'travel' | 'rating' | 'distance' | 'name'>('travel');
+	let sort = $state<'travel' | 'dry' | 'rating' | 'distance' | 'name'>('travel');
 
 	/** Small screens fold the filters away so the list starts under the map; this says how many bite. */
 	let filtersOpen = $state(false);
@@ -341,6 +420,9 @@
 		});
 		const by: Record<typeof sort, (a: WalkSummary, b: WalkSummary) => number> = {
 			travel: (a, b) => (minutesTo(a) ?? 999) - (minutesTo(b) ?? 999),
+			dry: (a, b) =>
+				dryBand(dry[b.id]?.chance) - dryBand(dry[a.id]?.chance) ||
+				(minutesTo(a) ?? 999) - (minutesTo(b) ?? 999),
 			rating: (a, b) => (b.ratingAvg ?? 0) - (a.ratingAvg ?? 0),
 			distance: (a, b) => a.distanceKm - b.distanceKm,
 			name: (a, b) => a.name.localeCompare(b.name, 'nl')
@@ -694,6 +776,10 @@
 					Alleen voor persoonlijk gebruik.
 					{#if hasOsm}Andere routes © OpenStreetMap-bijdragers (ODbL).{/if}
 				{/if}
+				<a href="https://open-meteo.com/" target="_blank" rel="noreferrer"
+					>Weerdata van Open-Meteo</a
+				>
+				(CC BY 4.0).
 			</p>
 		</div>
 
@@ -743,6 +829,7 @@
 					onlegs={(t) => (tripLegs = t)}
 					onrides={(r) => (feederLines = r)}
 					disruptions={walkDisruptions(selected)}
+					{forecast}
 					onclose={() => select(null)}
 					{reversed}
 					onreverse={reverse}
@@ -955,6 +1042,17 @@
 			{/if}
 
 			<!-- Sorting orders the list rather than narrowing it, so it heads the list, folded filters or not. -->
+			{#if sort === 'dry' && forecastStatus === 'done'}
+				<p class="hint" role="status">
+					{#if forecast}
+						Op de kans dat het droog blijft als je om {clock(leave)} vertrekt, daarna op reistijd.
+					{:else}
+						Nog geen weerbericht voor deze dag, dat komt tot een week vooruit. De lijst staat op
+						reistijd.
+					{/if}
+				</p>
+			{/if}
+
 			<div class="count">
 				<p>
 					{#if routeId}
@@ -970,6 +1068,7 @@
 					<span>Sorteer op</span>
 					<select bind:value={sort}>
 						<option value="travel">reistijd</option>
+						<option value="dry">droogste eerst</option>
 						<option value="rating">waardering</option>
 						<option value="distance">afstand</option>
 						<option value="name">naam</option>
@@ -1013,6 +1112,7 @@
 									{#if !w.isLoop && b != null}<span class="back">terug {formatDuration(b)}</span
 										>{/if}
 									<span>{km(w.distanceKm)} km</span>
+									{#if dry[w.id]}<span>{dryLabel(dry[w.id].chance)} · {dry[w.id].hours}</span>{/if}
 									{#if w.ratingAvg != null}<span>★ {w.ratingAvg.toLocaleString('nl-NL')}</span>{/if}
 									<span class="kind">{COLLECTION_LABELS[w.collection]}</span>
 								</span>

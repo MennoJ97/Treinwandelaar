@@ -3,6 +3,8 @@
 	import FeederLeg from './FeederLeg.svelte';
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
+	import WeatherBar from './WeatherBar.svelte';
+	import type { DayForecast } from '#lib/weather.js';
 	import { locateOnLine } from '#lib/geo.js';
 	import { dayPath, type TripPlan } from '#lib/plan.js';
 	import { track } from '#lib/track.js';
@@ -66,6 +68,8 @@
 		onrides?: (rides: { start: [number, number][]; end: [number, number][] }) => void;
 		/** Works and disruptions on this walk's train routes that day. */
 		disruptions: Disruption[];
+		/** The rain forecast for the list's day, which follows the date picked here. */
+		forecast?: DayForecast | null;
 		onclose: () => void;
 		/** The walk is shown the other way round (`walk` is turned around already). */
 		reversed?: boolean;
@@ -98,6 +102,7 @@
 		onlegs,
 		onrides,
 		disruptions,
+		forecast = null,
 		onclose,
 		reversed = false,
 		onreverse,
@@ -695,6 +700,10 @@
 			<label>Datum <input type="date" bind:value={date} /></label>
 			<label>Vertrek vanaf <input type="time" bind:value={time} step="300" /></label>
 		</div>
+
+		{#if forecast?.date === date && walkStart}
+			<WeatherBar line={walk.geometry} start={walkStart} minutes={minutesWalking} {forecast} />
+		{/if}
 
 		{#each disruptions as d (d.id)}
 			<!-- Collapsed to one line: what and when. The full story is a click away. -->
