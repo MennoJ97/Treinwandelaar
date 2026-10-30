@@ -29,6 +29,7 @@
 		dryBand,
 		dryChance,
 		dryLabel,
+		leaveMinutes,
 		toForecast,
 		type DayForecast,
 		type WeatherResponse
@@ -232,13 +233,19 @@
 	};
 
 	/**
-	 * Per walk, its chance and hours when leaving home at 09:00, the middle of the departures the travel
-	 * times are for (today, from now if that's later). The planner on a walk's page knows the real train.
+	 * Per walk, its chance and hours when leaving home at the time last set in a walk's planner for this
+	 * day. The travel times are for departures around 09:00 whatever the time, so this is close enough
+	 * to choose a walk; the walk's own page knows the real train.
 	 */
+	const leave = $derived(
+		leaveMinutes(
+			trip?.date === day ? trip.time : null,
+			day === today ? amsterdamMinutes(new Date()) : null
+		)
+	);
 	const dry = $derived.by(() => {
 		const result: Record<string, { chance: number; hours: string }> = {};
 		if (!forecast) return result;
-		const leave = day === today ? Math.max(9 * 60, amsterdamMinutes(new Date())) : 9 * 60;
 		for (const w of walks) {
 			const train = minutesTo(w);
 			if (train == null) continue;
@@ -1038,7 +1045,7 @@
 			{#if sort === 'dry' && forecastStatus === 'done'}
 				<p class="hint" role="status">
 					{#if forecast}
-						Op de kans dat het droog blijft als je om 9:00 vertrekt, daarna op reistijd.
+						Op de kans dat het droog blijft als je om {clock(leave)} vertrekt, daarna op reistijd.
 					{:else}
 						Nog geen weerbericht voor deze dag, dat komt tot een week vooruit. De lijst staat op
 						reistijd.

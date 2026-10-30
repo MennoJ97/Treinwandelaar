@@ -8,6 +8,7 @@ import {
 	dryChance,
 	dryLabel,
 	encodeMasks,
+	leaveMinutes,
 	pointsAlong,
 	rainAlong,
 	toForecast,
@@ -50,6 +51,15 @@ describe('weather', () => {
 	it('reads Amsterdam time in both seasons', () => {
 		expect(amsterdamMinutes(new Date('2026-07-01T08:30:00Z'))).toBe(10 * 60 + 30);
 		expect(amsterdamMinutes(new Date('2026-12-01T08:30:00Z'))).toBe(9 * 60 + 30);
+	});
+
+	it('leaves at the planner’s time, 09:00 without one, and not in the past today', () => {
+		expect(leaveMinutes('13:30')).toBe(13 * 60 + 30);
+		expect(leaveMinutes(null)).toBe(9 * 60);
+		expect(leaveMinutes('')).toBe(9 * 60); // a cleared time field
+		expect(leaveMinutes('13:30', 15 * 60)).toBe(15 * 60);
+		expect(leaveMinutes('13:30', 8 * 60)).toBe(13 * 60 + 30);
+		expect(leaveMinutes(null, 15 * 60)).toBe(15 * 60);
 	});
 
 	it('lists the hours a walk overlaps, with where you are halfway through each', () => {

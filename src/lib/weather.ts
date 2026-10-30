@@ -85,6 +85,19 @@ export function amsterdamMinutes(date: Date): number {
 	return h * 60 + m;
 }
 
+/** Without a time from the planner: the middle of the departures the list's travel times are for. */
+export const DEFAULT_LEAVE = 9 * 60;
+
+/**
+ * When you leave home, in minutes past midnight: the time set in the planner, or else DEFAULT_LEAVE.
+ * On today's list, `now` keeps it from lying in the past.
+ */
+export function leaveMinutes(time: string | null | undefined, now: number | null = null): number {
+	const [h, m] = (time ?? '').split(':').map(Number);
+	const leave = time && Number.isInteger(h) && Number.isInteger(m) ? h * 60 + m : DEFAULT_LEAVE;
+	return now == null ? leave : Math.max(leave, now);
+}
+
 /** One forecast hour of a walk, and how far along the walk you are halfway through it (0–1). */
 export interface WalkHour {
 	hour: number;
