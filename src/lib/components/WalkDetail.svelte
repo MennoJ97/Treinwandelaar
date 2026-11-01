@@ -4,11 +4,11 @@
 	import PhotoViewer from './PhotoViewer.svelte';
 	import TripOptions from './TripOptions.svelte';
 	import WeatherBar from './WeatherBar.svelte';
-	import type { DayForecast } from '#lib/weather.js';
+	import { amsterdamMinutes, leaveMinutes, type DayForecast } from '#lib/weather.js';
 	import { locateOnLine } from '#lib/geo.js';
 	import { dayPath, type TripPlan } from '#lib/plan.js';
 	import { track } from '#lib/track.js';
-	import { fetchTrips, PACE_KEY, readPace } from '#lib/trains.js';
+	import { DEFAULT_LEAVE_TIME, fetchTrips, PACE_KEY, readPace } from '#lib/trains.js';
 	import {
 		alongSentences,
 		endLabel,
@@ -58,6 +58,10 @@
 		trip?: { date: string; time: string } | null;
 		/** Every change of date or time, so the next walk can start from it. */
 		ontrip?: (trip: { date: string; time: string }) => void;
+		/** When you leave home, as you last set it: where a day without a plan yet starts. */
+		leaveTime?: string;
+		/** You set another time here, to remember for the list and other days. */
+		onleavetime?: (time: string) => void;
 		/** A plan to open with, from the link: its date and time, and the trains to pick if they run. */
 		plan?: TripPlan | null;
 		/** Every change of the plan, trains included, for the link. */
@@ -97,6 +101,8 @@
 		day,
 		trip,
 		ontrip,
+		leaveTime = DEFAULT_LEAVE_TIME,
+		onleavetime,
 		plan = null,
 		onplan,
 		onlegs,
@@ -137,7 +143,7 @@
 		);
 		if (hour >= 14) {
 			const tomorrow = new Date(now.getTime() + 24 * 3600_000);
-			return { date: amsterdamYmd(tomorrow), time: '09:00' };
+			return { date: amsterdamYmd(tomorrow), time: untrack(() => leaveTime) };
 		}
 		const minutes = Number(
 			now.toLocaleTimeString('nl-NL', { minute: '2-digit', timeZone: 'Europe/Amsterdam' })
@@ -148,13 +154,17 @@
 		return { date: amsterdamYmd(now), time: hm };
 	}
 
-	// Where you left the previous walk's planner, else today from now (or tomorrow if it's late),
-	// else that morning. Read once on purpose: after opening, the date is yours to change here.
+	// Where you left the previous walk's planner, else that day at the time you leave home, unless
+	// that's already gone today: then from now (or tomorrow if it's late). Read once on purpose: after
+	// opening, the date is yours to change here.
 	const startDay = untrack(() => day);
+	const startTime = untrack(() => leaveTime);
+	const gone =
+		startDay === amsterdamYmd() && leaveMinutes(startTime) < amsterdamMinutes(new Date());
 	const initial =
 		untrack(() => plan) ??
 		untrack(() => trip) ??
-		(startDay === amsterdamYmd() ? defaultStart() : { date: startDay, time: '09:00' });
+		(gone ? defaultStart() : { date: startDay, time: startTime });
 	/**
 	 * The link's trains, picked once their lists are in (if they still run then). Until that, they
 	 * stay in the link; a train that isn't there any more gets a note instead.
@@ -698,7 +708,14 @@
 		</div>
 		<div class="when">
 			<label>Datum <input type="date" bind:value={date} /></label>
-			<label>Vertrek vanaf <input type="time" bind:value={time} step="300" /></label>
+			<label
+				>Vertrek vanaf <input
+					type="time"
+					bind:value={time}
+					step="300"
+					oninput={(e) => onleavetime?.(e.currentTarget.value)}
+				/></label
+			>
 		</div>
 
 		{#if forecast?.date === date && walkStart}

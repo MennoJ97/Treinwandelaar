@@ -13,7 +13,7 @@
 	import { stretchId } from '#lib/path.js';
 	import { dayPath, dropTrains, readPlan, writePlan, type TripPlan } from '#lib/plan.js';
 	import { track } from '#lib/track.js';
-	import { HOME_KEY, readHome, readPace } from '#lib/trains.js';
+	import { HOME_KEY, isClock, LEAVE_KEY, readHome, readLeaveTime, readPace } from '#lib/trains.js';
 	import {
 		accessMinutes,
 		amsterdamYmd,
@@ -232,17 +232,42 @@
 		return `${String(Math.floor(rounded / 60)).padStart(2, '0')}:${String(rounded % 60).padStart(2, '0')}`;
 	};
 
+	/** When you leave home, as you last set it here or in a planner: for every day, remembered per browser. */
+	let leaveTime = $state(untrack(() => readLeaveTime()));
+	// The planner's date and time, kept from walk to walk. Stamped with the list's day: pick another
+	// travel day there and the planner starts over from it, at your leaveTime.
+	let trip = $state<{ date: string; time: string; day: string } | null>(null);
+	/** The time for this day: a plan opened for it (from a link, say) keeps its own, unremembered. */
+	const dayTime = $derived(trip?.date === day && trip.time ? trip.time : leaveTime);
+
+	function keepLeaveTime(time: string) {
+		if (!isClock(time)) return;
+		leaveTime = time;
+		if (trip) trip = { ...trip, time };
+		try {
+			localStorage.setItem(LEAVE_KEY, time);
+		} catch {
+			/* private mode: fine, just not remembered */
+		}
+	}
+
+	/** A cleared field keeps the time you had. */
+	function pickTime(e: Event & { currentTarget: HTMLInputElement }) {
+		const time = e.currentTarget.value;
+		if (isClock(time)) keepLeaveTime(time);
+		else e.currentTarget.value = dayTime;
+	}
+
 	/**
-	 * Per walk, its chance and hours when leaving home at the time last set in a walk's planner for this
-	 * day. The travel times are for departures around 09:00 whatever the time, so this is close enough
-	 * to choose a walk; the walk's own page knows the real train.
+	 * Per walk, its chance and hours when leaving home at that time. The travel times are for departures
+	 * around 09:00 whatever the time, so this is close enough to choose a walk; the walk's own page
+	 * knows the real train.
 	 */
 	const leave = $derived(
-		leaveMinutes(
-			trip?.date === day ? trip.time : null,
-			day === today ? amsterdamMinutes(new Date()) : null
-		)
+		leaveMinutes(dayTime, day === today ? amsterdamMinutes(new Date()) : null)
 	);
+	/** Today's time has gone: the list counts from now instead. */
+	const leavesNow = $derived(leave > leaveMinutes(dayTime));
 	const dry = $derived.by(() => {
 		const result: Record<string, { chance: number; hours: string }> = {};
 		if (!forecast) return result;
@@ -530,9 +555,6 @@
 		if (hoveredId === id) hoveredId = null;
 	};
 
-	// The planner's date and time, kept from walk to walk. Stamped with the list's day: pick another
-	// travel day there and the planner starts over from it.
-	let trip = $state<{ date: string; time: string; day: string } | null>(null);
 	/** One travel day: a date picked in the planner is the list's and map's day too, if the timetable covers it. */
 	function keepTrip(t: { date: string; time: string }) {
 		if (t.date >= today && t.date <= lastDay) day = t.date;
@@ -824,6 +846,8 @@
 					{day}
 					trip={trip?.day === day ? trip : null}
 					ontrip={keepTrip}
+					{leaveTime}
+					onleavetime={keepLeaveTime}
 					plan={linkPlan}
 					{onplan}
 					onlegs={(t) => (tripLegs = t)}
@@ -931,7 +955,7 @@
 				aria-controls="filters"
 				onclick={() => (filtersOpen = !filtersOpen)}
 			>
-				<span>{dayLabel(day)}</span>
+				<span>{dayLabel(day)} · <span class="tabular">{dayTime}</span></span>
 				<span class="toggle-label"
 					>Filters{#if activeFilters}<span class="badge tabular">{activeFilters}</span>{/if}</span
 				>
@@ -950,6 +974,11 @@
 						onchange={pickDay}
 					/>
 					<output>{weekday(day)}</output>
+				</label>
+				<label>
+					<span>Vertrek vanaf</span>
+					<input type="time" class="day" value={dayTime} step="300" required onchange={pickTime} />
+					{#if leavesNow}<output>nu</output>{/if}
 				</label>
 				<label>
 					<span>Max. reistijd heen</span>

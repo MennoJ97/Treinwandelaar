@@ -85,6 +85,22 @@ export function readHome(fallback: string): string {
 	}
 }
 
+/** A whole "HH:MM": a cleared time field gives "", and nothing else may come back from storage. */
+export const isClock = (time: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+
+/** When you leave home, as the list or a walk's planner last set it. */
+export const LEAVE_KEY = 'treinwandelaar.leave';
+export const DEFAULT_LEAVE_TIME = '09:00';
+export function readLeaveTime(): string {
+	try {
+		const saved = localStorage.getItem(LEAVE_KEY);
+		if (saved && isClock(saved)) return saved;
+	} catch {
+		/* no storage (private mode): the default */
+	}
+	return DEFAULT_LEAVE_TIME;
+}
+
 /** Your walking speed and breaks, as the planner's sliders last set them. */
 export const PACE_KEY = 'treinwandelaar.pace';
 export function readPace(): WalkPace {
