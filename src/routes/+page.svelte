@@ -962,24 +962,31 @@
 			</button>
 
 			<div class="filters" id="filters" class:open={filtersOpen}>
-				<label>
-					<span>Reisdag</span>
-					<input
-						type="date"
-						class="day"
-						value={day}
-						min={today}
-						max={lastDay}
-						required
-						onchange={pickDay}
-					/>
-					<output>{weekday(day)}</output>
-				</label>
-				<label>
-					<span>Vertrek vanaf</span>
-					<input type="time" class="day" value={dayTime} step="300" required onchange={pickTime} />
-					{#if leavesNow}<output>nu</output>{/if}
-				</label>
+				<div class="row when" role="group" aria-labelledby="when-label">
+					<span id="when-label">Vertrek</span>
+					<div class="when-fields">
+						<input
+							type="date"
+							class="day"
+							aria-label="Reisdag"
+							value={day}
+							min={today}
+							max={lastDay}
+							required
+							onchange={pickDay}
+						/>
+						<input
+							type="time"
+							class="day"
+							aria-label="Vertrek vanaf"
+							value={dayTime}
+							step="300"
+							required
+							onchange={pickTime}
+						/>
+					</div>
+					<output>{leavesNow ? 'nu' : weekday(day)}</output>
+				</div>
 				<label>
 					<span>Max. reistijd heen</span>
 					<input type="range" min="30" max="180" step="15" bind:value={maxTravel} />
@@ -1571,11 +1578,26 @@
 		background: var(--surface);
 	}
 
-	/* The date takes the middle column; its weekday goes where the sliders show their value. */
+	/* Date and time share the middle column, which a short label widens; the weekday goes where the
+	   sliders show their value. Too narrow for both after all: the time starts the next line. */
+	.filters > .when {
+		grid-template-columns: auto minmax(0, 1fr) auto;
+	}
+
+	.when-fields {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
 	.filters input.day {
-		grid-column: 2;
+		flex: 1 1 5.5rem;
 		color: var(--ink);
 		font: inherit;
+	}
+
+	.filters input.day[type='date'] {
+		flex-basis: 7.5rem;
 	}
 
 	.count,
