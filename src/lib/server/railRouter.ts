@@ -310,7 +310,7 @@ export function fastestRoutesHome(
 	return result;
 }
 
-// --- Loading days from SQLite, cached per feed and date -------------------------------------------
+// --- Loading days from SQLite, cached per load and date -------------------------------------------
 
 const cache = new Map<string, Day>();
 
@@ -323,12 +323,17 @@ export function timetableLastDay(db: DatabaseSync): string | null {
 
 /** The timetable for one date (YYYY-MM-DD), or null when the feed doesn't cover it. */
 export function loadDay(db: DatabaseSync, ymd: string): Day | null {
-	const feed = (
-		db.prepare(`select value from meta where key = 'gtfs_feed_date'`).get() as
-			{ value: string } | undefined
-	)?.value;
-	if (!feed) return null;
-	const key = `${feed}:${ymd}`;
+	// Keyed on when the tables were last swapped, not on the feed: `ingest:gtfs --reload` refills
+	// them from the same feed, and a cache keyed on its date kept serving the old trips.
+	const loaded = db
+		.prepare(
+			`select max(case key when 'gtfs_loaded_at' then value end) as at,
+			        max(case key when 'gtfs_feed_date' then value end) as feed
+			 from meta where key in ('gtfs_loaded_at', 'gtfs_feed_date')`
+		)
+		.get() as { at: string | null; feed: string | null } | undefined;
+	if (!loaded?.feed) return null;
+	const key = `${loaded.at ?? loaded.feed}:${ymd}`;
 	const hit = cache.get(key);
 	if (hit) return hit;
 	const rows = db

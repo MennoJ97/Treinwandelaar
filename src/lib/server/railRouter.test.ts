@@ -5,6 +5,7 @@ import {
 	buildDay,
 	fastestRoutes,
 	fastestRoutesHome,
+	loadDay,
 	timetableLastDay,
 	TRANSFER_SECONDS
 } from './railRouter';
@@ -148,5 +149,39 @@ describe('timetableLastDay', () => {
 		const db = new DatabaseSync(':memory:');
 		initSchema(db);
 		expect(timetableLastDay(db)).toBeNull();
+	});
+});
+
+describe('loadDay', () => {
+	/** A timetable as loadRail leaves it: one trip A → B (or A → C) on 21 Nov, and the meta rows. */
+	function load(db: DatabaseSync, to: string, loadedAt: string) {
+		const run = (sql: string, ...values: (string | number)[]) => db.prepare(sql).run(...values);
+		db.exec('delete from gtfs_stop_time; delete from gtfs_trip; delete from gtfs_service_date;');
+		run('insert into gtfs_service_date (service_id, date) values (?, ?)', 's', '20261121');
+		run('insert into gtfs_trip (trip_id, service_id, name) values (?, ?, ?)', 1, 's', 'Sprinter');
+		const stop = 'insert into gtfs_stop_time (trip_id, seq, code, arr, dep) values (?, ?, ?, ?, ?)';
+		run(stop, 1, 1, 'A', t('08:00'), t('08:00'));
+		run(stop, 1, 2, to, t('08:30'), t('08:30'));
+		const meta = 'insert or replace into meta (key, value) values (?, ?)';
+		run(meta, 'gtfs_feed_date', '2026-11-16T19:40:00.000Z');
+		run(meta, 'gtfs_loaded_at', loadedAt);
+	}
+	const reaches = (db: DatabaseSync, code: string) =>
+		fastestRoutes(loadDay(db, '2026-11-21')!, 'A', [code]).get(code) ?? null;
+
+	it('sees a reload from the same feed', () => {
+		const db = new DatabaseSync(':memory:');
+		initSchema(db);
+		load(db, 'B', '2026-11-16T19:50:00.000Z');
+		expect(reaches(db, 'C')).toBeNull();
+		load(db, 'C', '2026-11-17T08:00:00.000Z');
+		expect(reaches(db, 'C')?.minutes).toBe(30);
+	});
+
+	it('is null for a date the timetable does not cover', () => {
+		const db = new DatabaseSync(':memory:');
+		initSchema(db);
+		load(db, 'B', '2026-11-16T19:50:00.000Z');
+		expect(loadDay(db, '2026-11-22')).toBeNull();
 	});
 });
