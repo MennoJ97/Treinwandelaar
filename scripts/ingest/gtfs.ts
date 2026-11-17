@@ -2,9 +2,13 @@
  * Load the Dutch rail timetable from OVapi's GTFS feed into SQLite, for the offline travel-time map.
  *
  * The feed (gtfs.ovapi.nl/nl/gtfs-nl.zip, ~250 MB, rebuilt daily) covers all public transport for
- * about two months, including planned engineering works. We keep only the rail operators (agency
- * "IFF:*", from the national rail timetable): trains, plus their replacement buses where those stop
+ * about two months, including planned engineering works. We keep only the trips from the national
+ * rail timetable (realtime_trip_id "IFF:*"): trains, plus their replacement buses where those stop
  * at stations. Rail stops carry the NS station code in zone_id ("IFF:ut" → UT).
+ *
+ * Not by agency: in November 2026 OVapi moved NS, Arriva, R-net and the other Dutch rail operators
+ * from "IFF:*" agency ids to the ones their buses use (NS, ARR, RNET…), so Arriva's rail and bus
+ * routes now share an agency. The trip's realtime id still tells them apart.
  *
  * The zip is only re-downloaded when OVapi has a newer one; stop_times.txt (1.2 GB unpacked) is
  * streamed out of it, never written to disk. Tables are swapped in one transaction.
@@ -30,6 +34,7 @@ import { openDb, transaction } from '../../src/lib/server/db';
 import { parseStretchId } from '../../src/lib/path';
 import { reversedFeederId } from '../../src/lib/server/feeders';
 import { WALKABLE_STATION_M, type PathStage, type PathStop } from '../../src/lib/types';
+import { alert } from '../lib/alert';
 import { gtfsTime, parseCsvLine } from '../lib/csv';
 import { compactGeometry } from '../lib/store';
 import {
@@ -57,6 +62,12 @@ const ZIP_PATH =
 const USER_AGENT = 'Treinwandelaar/0.1 (personal, non-commercial walk planner)';
 /** Sleeper trains need reservations and don't help a day trip. */
 const SKIP_AGENCIES = new Set(['IFF:EU_SLEEPER']);
+/**
+ * A feed with fewer rail trips than this has changed shape under us, not lost its trains: the
+ * November 2026 agency change left 495 of about 45,000, and the map quietly reached no station at
+ * all. Keep the timetable we have and raise an alert instead of swapping that in.
+ */
+const MIN_RAIL_TRIPS = 10_000;
 
 async function download(): Promise<boolean> {
 	mkdirSync(dirname(ZIP_PATH), { recursive: true });
@@ -130,7 +141,7 @@ async function loadRail(db: DatabaseSync, feedDate: string) {
 	const t0 = Date.now();
 	const railRoutes = new Map<string, string>(); // route_id → display name
 	await eachRow(ZIP_PATH, 'routes.txt', (r) => {
-		if (!r.agency_id.startsWith('IFF:') || SKIP_AGENCIES.has(r.agency_id)) return;
+		if (SKIP_AGENCIES.has(r.agency_id)) return;
 		if (r.route_type !== '2' && r.route_type !== '3') return;
 		const name = r.route_type === '3' ? 'Bus' : r.route_short_name || 'Trein';
 		railRoutes.set(r.route_id, name);
@@ -138,9 +149,20 @@ async function loadRail(db: DatabaseSync, feedDate: string) {
 
 	const trips = new Map<string, { service: string; name: string }>();
 	await eachRow(ZIP_PATH, 'trips.txt', (r) => {
+		// Every bus in the country is route_type 3 too: only the rail timetable's own trips count.
+		if (!r.realtime_trip_id?.startsWith('IFF:')) return;
 		const name = railRoutes.get(r.route_id);
 		if (name) trips.set(r.trip_id, { service: r.service_id, name });
 	});
+	if (trips.size < MIN_RAIL_TRIPS) {
+		const msg =
+			`Only ${trips.size} rail trips in the GTFS feed of ${feedDate.slice(0, 10)} ` +
+			`(expected at least ${MIN_RAIL_TRIPS}), so the timetable was not replaced. ` +
+			`OVapi has probably changed how it marks rail trips: see loadRail in scripts/ingest/gtfs.ts.`;
+		console.error(msg);
+		await alert('Treinwandelaar: rail timetable not loaded', msg);
+		return;
+	}
 	const services = new Set([...trips.values()].map((t) => t.service));
 
 	const stopCode = new Map<string, string>();
