@@ -22,7 +22,8 @@ import { pipeline } from 'node:stream/promises';
 import type { GeoFeature } from './context';
 import type { OsmRelation } from './osm';
 
-const EXTRACT_URL = 'https://download.geofabrik.de/europe/netherlands-latest.osm.pbf';
+/** Geofabrik moved the Netherlands into its own folder in Nov 2026; the old top-level path 404ed. */
+const EXTRACT_URL = 'https://download.geofabrik.de/europe/netherlands/netherlands-latest.osm.pbf';
 /** Geofabrik updates daily; a weekly refresh is plenty and kind to their servers. */
 const MAX_AGE_DAYS = 6;
 
